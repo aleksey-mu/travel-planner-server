@@ -99,7 +99,11 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid email or password")
 		return
 	}
-	token, expiresIn, err := a.tokens.Issue(u.ID, u.Email)
+	if u.IsDisabled() {
+		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid email or password")
+		return
+	}
+	token, expiresIn, err := a.tokens.Issue(u.ID, u.Email, u.PasswordVersion)
 	if err != nil {
 		a.log.Error("issue token", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not issue token")

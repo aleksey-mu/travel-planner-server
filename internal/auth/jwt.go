@@ -10,6 +10,7 @@ import (
 // Claims are HS256 access-token claims.
 type Claims struct {
 	Email string `json:"email"`
+	Pwd   int    `json:"pwd"` // password_version — bump invalidates token
 	jwt.RegisteredClaims
 }
 
@@ -33,11 +34,12 @@ func (m *TokenManager) TTL() time.Duration {
 }
 
 // Issue creates a signed access token for the user.
-func (m *TokenManager) Issue(userID, email string) (token string, expiresIn int, err error) {
+func (m *TokenManager) Issue(userID, email string, passwordVersion int) (token string, expiresIn int, err error) {
 	now := time.Now().UTC()
 	exp := now.Add(m.ttl)
 	claims := Claims{
 		Email: email,
+		Pwd:   passwordVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -10,7 +10,7 @@ import (
 
 func TestIssueAndParse(t *testing.T) {
 	m := NewTokenManager(strings.Repeat("s", 32), 3600)
-	tok, expiresIn, err := m.Issue("user-1", "a@example.com")
+	tok, expiresIn, err := m.Issue("user-1", "a@example.com", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,16 +21,16 @@ func TestIssueAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.Subject != "user-1" || claims.Email != "a@example.com" {
+	if claims.Subject != "user-1" || claims.Email != "a@example.com" || claims.Pwd != 3 {
 		t.Fatalf("claims=%+v", claims)
 	}
 }
 
 func TestRejectNoneAlg(t *testing.T) {
 	m := NewTokenManager(strings.Repeat("s", 32), 60)
-	// Craft unsigned "none" token style — ParseWithValidMethods should reject.
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, Claims{
 		Email: "x@y.z",
+		Pwd:   0,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "u1",
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
@@ -48,7 +48,7 @@ func TestRejectNoneAlg(t *testing.T) {
 func TestRejectWrongSecret(t *testing.T) {
 	a := NewTokenManager(strings.Repeat("a", 32), 60)
 	b := NewTokenManager(strings.Repeat("b", 32), 60)
-	tok, _, err := a.Issue("u", "e@e.e")
+	tok, _, err := a.Issue("u", "e@e.e", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

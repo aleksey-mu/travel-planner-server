@@ -1,5 +1,7 @@
 # Phase 1 — Basic cloud-storage sync (self-hosted TravelPlan server)
 
+> **Superseded for current product.** Tenancy + `/sync/quota` shape and multi-user work live in [plan-multi-user.md](./plan-multi-user.md) / [plan-multi-user-impl.md](./plan-multi-user-impl.md) and `travel-plans/docs/self-hosted-server.md`. This file is historical Phase 1 build notes only — do not treat `{usage,limit}` or single-owner forever as current contracts.
+
 Greenfield Go server that behaves as a **cloud storage equivalent** of the Google Drive / folder-layout sync path. Sharing, live-edit, and analytics are out of scope.
 
 **API contract (source of truth):**  

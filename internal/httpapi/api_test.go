@@ -20,6 +20,12 @@ import (
 
 func testAPI(t *testing.T, allowRegister bool, cors []string, quota, maxUpload int64) http.Handler {
 	t.Helper()
+	h, _ := testAPIWithUsers(t, allowRegister, cors, quota, maxUpload)
+	return h
+}
+
+func testAPIWithUsers(t *testing.T, allowRegister bool, cors []string, quota, maxUpload int64) (http.Handler, *auth.UserStore) {
+	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{
 		DataDir:           dir,
@@ -45,7 +51,7 @@ func testAPI(t *testing.T, allowRegister bool, cors []string, quota, maxUpload i
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
 	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+	return httpapi.NewAPI(cfg, users, tokens, store, log).Handler(), users
 }
 
 func login(t *testing.T, h http.Handler) string {
@@ -107,6 +113,117 @@ func TestAuthFlow(t *testing.T) {
 	h.ServeHTTP(rec3, req3)
 	if rec3.Code != 403 {
 		t.Fatalf("want 403 got %d %s", rec3.Code, rec3.Body.String())
+	}
+}
+
+func TestPasswordBumpInvalidatesToken(t *testing.T) {
+	h, users := testAPIWithUsers(t, false, nil, 1<<30, 1<<20)
+	tok := login(t, h)
+	u, err := users.GetByEmail(t.Context(), "you@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := users.BumpPasswordVersion(t.Context(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("want 401 after pwd bump got %d", rec.Code)
+	}
+	tok2 := login(t, h)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req2.Header.Set("Authorization", "Bearer "+tok2)
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != 200 {
+		t.Fatalf("new login should work: %d %s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestDisabledUserRejectedOnSyncAndLogin(t *testing.T) {
+	h, users := testAPIWithUsers(t, false, nil, 1<<30, 1<<20)
+	tok := login(t, h)
+	u, err := users.GetByEmail(t.Context(), "you@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := users.SetDisabled(t.Context(), u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("disabled sync want 401 got %d", rec.Code)
+	}
+	body := `{"email":"you@example.com","password":"secret123"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != 401 {
+		t.Fatalf("disabled login want 401 got %d", rec2.Code)
+	}
+}
+
+func TestSyncQuotaShape(t *testing.T) {
+	h, users := testAPIWithUsers(t, false, nil, 1000, 1<<20)
+	tok := login(t, h)
+	u, err := users.GetByEmail(t.Context(), "you@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	getQuota := func() map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("quota %d %s", rec.Code, rec.Body.String())
+		}
+		var m map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	m := getQuota()
+	if m["mode"] != "default" {
+		t.Fatalf("mode=%v", m["mode"])
+	}
+	if m["configuredLimitBytes"].(float64) != 1000 {
+		t.Fatalf("configured=%v", m["configuredLimitBytes"])
+	}
+	if m["defaultLimitBytes"].(float64) != 1000 {
+		t.Fatalf("default=%v", m["defaultLimitBytes"])
+	}
+
+	zero := int64(0)
+	if err := users.SetQuotaBytes(t.Context(), u.ID, &zero); err != nil {
+		t.Fatal(err)
+	}
+	m = getQuota()
+	if m["mode"] != "unlimited" {
+		t.Fatalf("mode=%v", m["mode"])
+	}
+	if m["configuredLimitBytes"] != nil {
+		t.Fatalf("configured should be null: %v", m["configuredLimitBytes"])
+	}
+
+	personal := int64(500)
+	if err := users.SetQuotaBytes(t.Context(), u.ID, &personal); err != nil {
+		t.Fatal(err)
+	}
+	m = getQuota()
+	if m["mode"] != "personal" || m["configuredLimitBytes"].(float64) != 500 {
+		t.Fatalf("personal: %v", m)
 	}
 }
 

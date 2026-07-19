@@ -22,13 +22,19 @@ func (a *API) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleQuota(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
-	usage, limit, err := a.store.Quota(userID)
+	u, err := a.users.GetByID(r.Context(), userID)
+	if err != nil {
+		a.log.Error("quota user", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "quota failed")
+		return
+	}
+	view, err := a.store.BuildQuotaForUser(userID, u.QuotaBytes, a.cfg.DefaultQuotaBytes)
 	if err != nil {
 		a.log.Error("quota", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "quota failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int64{"usage": usage, "limit": limit})
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (a *API) handleGetManifest(w http.ResponseWriter, r *http.Request) {

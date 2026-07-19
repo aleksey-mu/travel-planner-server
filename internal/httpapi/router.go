@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -18,9 +19,18 @@ type API struct {
 	log    *slog.Logger
 }
 
-// NewAPI constructs an API.
+// NewAPI constructs an API and wires per-user quota resolution onto the store.
 func NewAPI(cfg *config.Config, users *auth.UserStore, tokens *auth.TokenManager, store *syncstore.Store, log *slog.Logger) *API {
-	return &API{cfg: cfg, users: users, tokens: tokens, store: store, log: log}
+	a := &API{cfg: cfg, users: users, tokens: tokens, store: store, log: log}
+	store.SetUserQuotaResolver(func(userID string) (int64, error) {
+		u, err := users.GetByID(context.Background(), userID)
+		if err != nil {
+			return 0, err
+		}
+		configured, _ := syncstore.ResolveConfigured(u.QuotaBytes, cfg.DefaultQuotaBytes)
+		return configured, nil
+	})
+	return a
 }
 
 // Handler returns the root HTTP handler with middleware.

@@ -1,6 +1,7 @@
 package syncstore
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,18 +29,35 @@ var ErrPayloadTooLarge = errors.New("payload too large")
 // Store is per-user filesystem storage under DATA_DIR/users/{userId}/.
 type Store struct {
 	dataDir        string
-	quotaLimit     int64
+	quotaLimit     int64 // server default; UnlimitedConfigured when no cap
 	maxUploadBytes int64
 	writeMu        sync.Mutex
+	// userQuota optional: returns configured limit for user (UnlimitedConfigured = unlimited).
+	userQuota func(userID string) (int64, error)
 }
 
-// New creates a Store.
+// New creates a Store. quotaLimit 0 or negative → unlimited configured default.
 func New(dataDir string, quotaLimit, maxUploadBytes int64) *Store {
+	if quotaLimit <= 0 {
+		quotaLimit = UnlimitedConfigured
+	}
 	return &Store{
 		dataDir:        dataDir,
 		quotaLimit:     quotaLimit,
 		maxUploadBytes: maxUploadBytes,
 	}
+}
+
+// SetUserQuotaResolver sets per-user configured quota lookup (from users.quota_bytes).
+func (s *Store) SetUserQuotaResolver(fn func(userID string) (int64, error)) {
+	s.userQuota = fn
+}
+
+func (s *Store) configuredQuota(userID string) (int64, error) {
+	if s.userQuota != nil {
+		return s.userQuota(userID)
+	}
+	return s.quotaLimit, nil
 }
 
 func (s *Store) userRoot(userID string) (string, error) {
@@ -307,14 +325,19 @@ func (s *Store) Usage(userID string) (int64, error) {
 	return WalkUsage(root)
 }
 
-// Quota returns usage and effective limit (min of configured quota and free disk).
-func (s *Store) Quota(userID string) (usage, limit int64, err error) {
-	usage, err = s.Usage(userID)
+// BuildQuotaForUser builds Phase 2 quota JSON fields for the user.
+func (s *Store) BuildQuotaForUser(userID string, userOverride sql.NullInt64, defaultBytes int64) (QuotaView, error) {
+	usage, err := s.Usage(userID)
 	if err != nil {
-		return 0, 0, err
+		return QuotaView{}, err
 	}
+	configured, mode := ResolveConfigured(userOverride, defaultBytes)
 	diskFree := s.diskFreeOrUnknown()
-	return usage, EffectiveQuotaLimit(usage, s.quotaLimit, diskFree), nil
+	def := defaultBytes
+	if def <= 0 {
+		def = 0
+	}
+	return BuildQuotaView(usage, configured, def, mode, diskFree), nil
 }
 
 func (s *Store) diskFreeOrUnknown() int64 {
@@ -342,8 +365,12 @@ func (s *Store) writeFileQuota(userID, dest string, body []byte) error {
 	}
 	delta := int64(len(body)) - existingSize
 	diskFree := s.diskFreeOrUnknown()
-	if !CanAcceptGrowth(usage, delta, s.quotaLimit, diskFree) {
-		if delta > 0 && usage+delta <= s.quotaLimit && diskFree >= 0 && diskFree < delta {
+	configured, err := s.configuredQuota(userID)
+	if err != nil {
+		return err
+	}
+	if !CanAcceptGrowth(usage, delta, configured, diskFree) {
+		if GrowthRejectIsDisk(usage, delta, configured, diskFree) {
 			return ErrDiskFull
 		}
 		return ErrQuotaExceeded

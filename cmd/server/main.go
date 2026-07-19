@@ -205,7 +205,7 @@ func runCreateUser(args []string) int {
 
 	u, err := users.Create(context.Background(), *email, *password, *displayName)
 	if errors.Is(err, auth.ErrOwnerExists) {
-		fmt.Fprintln(os.Stderr, "vault already has an owner (Phase 1 single-owner)")
+		fmt.Fprintln(os.Stderr, "vault already has an owner (single-account until multi-user create ships)")
 		return 1
 	}
 	if errors.Is(err, auth.ErrConflict) {

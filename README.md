@@ -4,12 +4,12 @@ Sync backend for **TravelPlan** that keeps trip data on infrastructure you contr
 
 Instead of linking Google Drive / OneDrive / Dropbox, the app talks to this server over HTTPS. Data lives on the server disk under a durable volume (`DATA_DIR`).
 
-**Phase 1 scope**
+**Status (multi-user in progress)**
 
-- One **owner** account per deployment (single-owner vault)
-- Auth: email + password → JWT (no OAuth, no email/SMTP, no password-reset mail)
-- Provision the owner with seed env vars or CLI — public register stays off
-- Not a multi-user / household host
+- **Breaking / unreleased:** wipe `DATA_DIR` when upgrading builds — no DB or API compatibility.
+- Auth: email + password → JWT (no OAuth, no SMTP).
+- Today CLI/seed still allow **one** account until multi-user S3 lands; target is N private vaults (invites) — see `docs/plan-multi-user.md`.
+- Quota API is the Phase 2 JSON shape (below), not `{usage,limit}`.
 
 ---
 
@@ -18,7 +18,7 @@ Instead of linking Google Drive / OneDrive / Dropbox, the app talks to this serv
 | Item | Notes |
 |------|--------|
 | Host | VPS **or** Coolify (pick one in step 2) |
-| Public URL | Prefer HTTPS, e.g. `https://travelplan.example.com` |
+| Public URL | **HTTPS required** (e.g. `https://travelplan.example.com`). App allows `http://127.0.0.1` only for local Docker. |
 | Persistent volume | Mounted at `/data` |
 | Owner credentials | Email + password for the TravelPlan app |
 
@@ -34,7 +34,9 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Creates the owner on first boot if that email does not exist. **Unset the password after first successful login** |
 | `SEED_ADMIN_DISPLAY_NAME` | Display name (default `Admin`) |
 | `CORS_ORIGINS` | Allowed **web app** origins (comma-separated). Needed when TravelPlan runs in a browser. Native apps ignore CORS. Example: `https://app.example.com` |
-| `VAULT_QUOTA_MB` | Soft cap for the owner vault, in MiB (`10240` ≈ 10 GiB). Also capped by free disk on `DATA_DIR` |
+| `SERVER_NAME` | Optional friendly host label |
+| `MAX_USERS` | Soft account cap (default `100`; `0` = unlimited). Enforced when multi-user create/invite ships |
+| `VAULT_QUOTA_MB` | Default vault cap in MiB (`10240` ≈ 10 GiB). **`0` = unlimited** (disk still applies) |
 | `MAX_UPLOAD_MB` | Max size of a single attachment, in MiB (default `50`) |
 | `HTTP_PUBLISH_PORT` | Host port for Compose on a VPS (default `8080`). Unused when Coolify’s proxy fronts the container |
 | `ALLOW_REGISTER` | Keep `false` |
@@ -71,7 +73,7 @@ docker compose exec travelplan-server /travelplan-server set-password \
   --email you@example.com --password '…'
 ```
 
-Phase 1 allows only **one** user. A second `create-user` fails with “vault already has an owner”.
+Until multi-user create ships, a second `create-user` still fails (single account). Wipe `/data` when switching major builds.
 
 ### Option B — Coolify
 
@@ -92,16 +94,30 @@ If you deploy Dockerfile-only (no Compose), set `DATA_DIR=/data`, `HTTP_ADDR=:80
 3. Sign in with the owner email/password.
 4. Test connection → save → sync.
 
+**TLS:** use HTTPS for any non-local host. Local dogfood only: `http://127.0.0.1:8080`. Plain `http://` LAN IPs are not a supported mode.
+
 ---
 
 ## 4. Storage behaviour
 
-- Soft quota: `VAULT_QUOTA_MB` (MiB).
+- Default vault cap: `VAULT_QUOTA_MB` (MiB). `0` = unlimited (free disk still applies).
+- Per-user overrides come later (admin); `quota_bytes` already in schema.
 - Hard floor: free space on the volume that holds `DATA_DIR`.
-- `GET /api/v1/sync/quota` returns `usage` / `limit` in **bytes**; `limit` is `min(configured quota, usage + free disk)`.
-- Over soft quota → `413 QUOTA_EXCEEDED`. Disk exhausted → `507 DISK_FULL`.
+- `GET /api/v1/sync/quota` returns:
 
-Change limits → update env → restart/redeploy → sync again in the app.
+```json
+{
+  "usageBytes": 0,
+  "configuredLimitBytes": 10737418240,
+  "effectiveLimitBytes": 10737418240,
+  "mode": "default",
+  "defaultLimitBytes": 10737418240
+}
+```
+
+`configuredLimitBytes` / `effectiveLimitBytes` are `null` when unlimited. `mode` is `default` | `personal` | `unlimited`.
+
+- Over finite quota → `413 QUOTA_EXCEEDED`. Disk exhausted → `507 DISK_FULL`.
 
 ---
 
@@ -129,9 +145,14 @@ CLI in the image: `serve` | `create-user` | `set-password` | `healthcheck`
 | `CORS_ORIGINS` | no | empty | Web origins only |
 | `ALLOW_REGISTER` | no | `false` | Keep false |
 | `JWT_TTL_SECONDS` | no | `3600` | |
-| `VAULT_QUOTA_MB` | no | `10240` | Vault cap (MiB) |
+| `VAULT_QUOTA_MB` | no | `10240` | Vault cap MiB; **`0` = unlimited** |
 | `MAX_UPLOAD_MB` | no | `50` | Per-file cap (MiB) |
+| `SERVER_NAME` | no | empty | Friendly host label |
+| `MAX_USERS` | no | `100` | Account soft cap (`0` = unlimited) |
+| `INVITE_TTL_DAYS` | no | `7` | Invite lifetime (multi-user) |
+| `PASSWORD_RESET_TTL_SECONDS` | no | `3600` | Admin reset-link TTL |
 | `LOG_FORMAT` / `LOG_LEVEL` | no | `json` / `info` | |
 | `SEED_ADMIN_*` | no | — | First-boot owner; remove password after |
 
-Design detail: [docs/plan-basic-sync.md](docs/plan-basic-sync.md) · Multi-user Phase 2: [docs/plan-multi-user.md](docs/plan-multi-user.md).
+**Current product plan:** [docs/plan-multi-user.md](docs/plan-multi-user.md) · step build: [docs/plan-multi-user-impl.md](docs/plan-multi-user-impl.md).  
+Historical Phase 1 notes (superseded for quota/tenancy): [docs/plan-basic-sync.md](docs/plan-basic-sync.md).

@@ -35,7 +35,7 @@ func ValidUserID(id string) bool {
 	return userIDPattern.MatchString(id)
 }
 
-// Middleware validates Bearer JWT, subject shape, and that the user still exists.
+// Middleware validates Bearer JWT, subject shape, user exists, not disabled, and pwd claim matches.
 func Middleware(tokens *TokenManager, users *UserStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +58,16 @@ func Middleware(tokens *TokenManager, users *UserStore) func(http.Handler) http.
 				writeUnauthorized(w, "invalid or expired token")
 				return
 			}
-			if _, err := users.GetByID(r.Context(), claims.Subject); err != nil {
+			u, err := users.GetByID(r.Context(), claims.Subject)
+			if err != nil {
+				writeUnauthorized(w, "invalid or expired token")
+				return
+			}
+			if u.IsDisabled() {
+				writeUnauthorized(w, "invalid or expired token")
+				return
+			}
+			if claims.Pwd != u.PasswordVersion {
 				writeUnauthorized(w, "invalid or expired token")
 				return
 			}
@@ -67,8 +76,34 @@ func Middleware(tokens *TokenManager, users *UserStore) func(http.Handler) http.
 	}
 }
 
+// AdminMiddleware requires an already-authenticated user who is currently is_admin in the DB.
+// Use after Middleware. Re-reads is_admin each request (not JWT claim).
+func AdminMiddleware(users *UserStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := UserIDFromContext(r.Context())
+			if userID == "" {
+				writeUnauthorized(w, "missing bearer token")
+				return
+			}
+			u, err := users.GetByID(r.Context(), userID)
+			if err != nil || u.IsDisabled() || !u.IsAdmin {
+				writeForbidden(w, "admin required")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func writeUnauthorized(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":{"code":"UNAUTHORIZED","message":"` + msg + `"}}`))
+}
+
+func writeForbidden(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"error":{"code":"FORBIDDEN","message":"` + msg + `"}}`))
 }
