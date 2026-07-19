@@ -50,34 +50,52 @@ func (a *API) registerRoutes(mux *http.ServeMux) {
 	requireAdmin := func(h http.Handler) http.Handler {
 		return requireAuth(auth.AdminMiddleware(a.users)(h))
 	}
+	requireSync := func(h http.HandlerFunc) http.Handler {
+		return requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := auth.UserIDFromContext(r.Context())
+			u, err := a.users.GetByID(r.Context(), userID)
+			if err != nil {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user not found")
+				return
+			}
+			if u.NeedsRecoveryCodesAck() {
+				writeError(w, http.StatusForbidden, "RECOVERY_CODES_ACK_REQUIRED", "acknowledge recovery codes before sync")
+				return
+			}
+			h.ServeHTTP(w, r)
+		}))
+	}
 
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 	mux.HandleFunc("POST /api/v1/auth/register", a.handleRegister)
 	mux.HandleFunc("POST /api/v1/auth/login", a.handleLogin)
 	mux.HandleFunc("GET /api/v1/server/info", a.handleServerInfo)
 	mux.HandleFunc("GET /api/v1/invites/{token}", a.handleGetInvite)
+	mux.HandleFunc("POST /api/v1/invites/{token}/accept", a.handleAcceptInvite)
 
 	mux.Handle("GET /api/v1/me", requireAuth(http.HandlerFunc(a.handleMe)))
+	mux.Handle("POST /api/v1/me/recovery-codes", requireAuth(http.HandlerFunc(a.handleRegenerateRecoveryCodes)))
+	mux.Handle("POST /api/v1/me/recovery-codes/ack", requireAuth(http.HandlerFunc(a.handleAckRecoveryCodes)))
 
 	mux.Handle("POST /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminCreateInvite)))
 	mux.Handle("GET /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminListInvites)))
 	mux.Handle("DELETE /api/v1/admin/invites/{id}", requireAdmin(http.HandlerFunc(a.handleAdminRevokeInvite)))
 
-	mux.Handle("POST /api/v1/sync/bootstrap", requireAuth(http.HandlerFunc(a.handleBootstrap)))
-	mux.Handle("GET /api/v1/sync/quota", requireAuth(http.HandlerFunc(a.handleQuota)))
-	mux.Handle("GET /api/v1/sync/manifest", requireAuth(http.HandlerFunc(a.handleGetManifest)))
-	mux.Handle("PUT /api/v1/sync/manifest", requireAuth(http.HandlerFunc(a.handlePutManifest)))
+	mux.Handle("POST /api/v1/sync/bootstrap", requireSync(a.handleBootstrap))
+	mux.Handle("GET /api/v1/sync/quota", requireSync(a.handleQuota))
+	mux.Handle("GET /api/v1/sync/manifest", requireSync(a.handleGetManifest))
+	mux.Handle("PUT /api/v1/sync/manifest", requireSync(a.handlePutManifest))
 
-	mux.Handle("GET /api/v1/sync/travels/{travelId}", requireAuth(http.HandlerFunc(a.handleGetTravel)))
-	mux.Handle("PUT /api/v1/sync/travels/{travelId}", requireAuth(http.HandlerFunc(a.handlePutTravel)))
-	mux.Handle("DELETE /api/v1/sync/travels/{travelId}", requireAuth(http.HandlerFunc(a.handleDeleteTravel)))
+	mux.Handle("GET /api/v1/sync/travels/{travelId}", requireSync(a.handleGetTravel))
+	mux.Handle("PUT /api/v1/sync/travels/{travelId}", requireSync(a.handlePutTravel))
+	mux.Handle("DELETE /api/v1/sync/travels/{travelId}", requireSync(a.handleDeleteTravel))
 
-	mux.Handle("GET /api/v1/sync/user-data/{fileName}", requireAuth(http.HandlerFunc(a.handleGetUserData)))
-	mux.Handle("PUT /api/v1/sync/user-data/{fileName}", requireAuth(http.HandlerFunc(a.handlePutUserData)))
+	mux.Handle("GET /api/v1/sync/user-data/{fileName}", requireSync(a.handleGetUserData))
+	mux.Handle("PUT /api/v1/sync/user-data/{fileName}", requireSync(a.handlePutUserData))
 
 	// Specific file routes before wildcards.
-	mux.Handle("PUT /api/v1/sync/files/{travelId}/{itemId}/{fileName}", requireAuth(http.HandlerFunc(a.handlePutFile)))
-	mux.Handle("POST /api/v1/sync/files/{travelId}/{itemId}/ensure-folder", requireAuth(http.HandlerFunc(a.handleEnsureFolder)))
-	mux.Handle("GET /api/v1/sync/files/{fileId...}", requireAuth(http.HandlerFunc(a.handleGetFile)))
-	mux.Handle("DELETE /api/v1/sync/files/{fileId...}", requireAuth(http.HandlerFunc(a.handleDeleteFile)))
+	mux.Handle("PUT /api/v1/sync/files/{travelId}/{itemId}/{fileName}", requireSync(a.handlePutFile))
+	mux.Handle("POST /api/v1/sync/files/{travelId}/{itemId}/ensure-folder", requireSync(a.handleEnsureFolder))
+	mux.Handle("GET /api/v1/sync/files/{fileId...}", requireSync(a.handleGetFile))
+	mux.Handle("DELETE /api/v1/sync/files/{fileId...}", requireSync(a.handleDeleteFile))
 }

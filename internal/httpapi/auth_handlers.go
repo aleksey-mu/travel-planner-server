@@ -71,8 +71,9 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken": token,
-		"expiresIn":   expiresIn,
+		"accessToken":           token,
+		"expiresIn":             expiresIn,
+		"needsRecoveryCodesAck": u.NeedsRecoveryCodesAck(),
 		"user": map[string]string{
 			"id":          u.ID,
 			"email":       u.Email,
@@ -93,9 +94,10 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"id":          u.ID,
-		"email":       u.Email,
-		"displayName": u.DisplayName,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":                    u.ID,
+		"email":                 u.Email,
+		"displayName":           u.DisplayName,
+		"needsRecoveryCodesAck": u.NeedsRecoveryCodesAck(),
 	})
 }

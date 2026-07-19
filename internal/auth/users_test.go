@@ -36,8 +36,8 @@ func TestEnsureSchemaAndCreateAdmin(t *testing.T) {
 	if u.QuotaBytes.Valid {
 		t.Fatal("quota_bytes should be NULL (server default)")
 	}
-	if u.RecoveryCodesAckedAt.Valid {
-		t.Fatal("recovery_codes_acked_at should be NULL")
+	if !u.RecoveryCodesAckedAt.Valid {
+		t.Fatal("CLI create should set recovery_codes_acked_at")
 	}
 	if u.DisabledAt.Valid {
 		t.Fatal("disabled_at should be NULL")

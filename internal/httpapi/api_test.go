@@ -644,3 +644,221 @@ func TestServerInfoAndInvites(t *testing.T) {
 		t.Fatalf("unauth admin want 401 got %d", rec.Code)
 	}
 }
+
+func TestAcceptInviteAckLoginFlow(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:           dir,
+		JWTSecret:         strings.Repeat("k", 32),
+		HTTPAddr:          ":0",
+		JWTTTLSeconds:     3600,
+		DefaultQuotaBytes: 1 << 30,
+		MaxUploadBytes:    1 << 20,
+		LogFormat:         "text",
+		LogLevel:          "error",
+		MaxUsers:          100,
+		InviteTTLDays:     7,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	admin, err := users.Create(t.Context(), "admin@example.com", "secret123", "Admin", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+
+	adminTok, _, err := tokens.Issue(admin.ID, admin.Email, admin.PasswordVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatal(rec.Body.String())
+	}
+	var inv struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+
+	body := `{"email":"friend@example.com","password":"password123","displayName":"Friend"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("accept %d %s", rec.Code, rec.Body.String())
+	}
+	var acceptResp struct {
+		AccessToken             string   `json:"accessToken"`
+		NeedsRecoveryCodesAck   bool     `json:"needsRecoveryCodesAck"`
+		RecoveryCodes           []string `json:"recoveryCodes"`
+		RecoveryCodesGeneration int      `json:"recoveryCodesGeneration"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &acceptResp); err != nil {
+		t.Fatal(err)
+	}
+	if !acceptResp.NeedsRecoveryCodesAck || len(acceptResp.RecoveryCodes) != 10 || acceptResp.AccessToken == "" || acceptResp.RecoveryCodesGeneration != 1 {
+		t.Fatal(acceptResp)
+	}
+
+	// Sync blocked until ack
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("sync before ack want 403 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 410 {
+		t.Fatalf("reuse want 410 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("ack %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("sync after ack %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(
+		`{"email":"friend@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var loginResp struct {
+		NeedsRecoveryCodesAck bool `json:"needsRecoveryCodesAck"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &loginResp)
+	if loginResp.NeedsRecoveryCodesAck {
+		t.Fatal("after ack login should be false")
+	}
+
+	// unacked regenerate path
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes", nil)
+	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var regen struct {
+		RecoveryCodes           []string `json:"recoveryCodes"`
+		RecoveryCodesGeneration int      `json:"recoveryCodesGeneration"`
+		NeedsRecoveryCodesAck   bool     `json:"needsRecoveryCodesAck"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &regen)
+	if len(regen.RecoveryCodes) != 10 || !regen.NeedsRecoveryCodesAck || regen.RecoveryCodesGeneration != 2 {
+		t.Fatal(regen)
+	}
+
+	// stale generation ack
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 409 {
+		t.Fatalf("stale gen want 409 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(
+		`{"email":"friend@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &loginResp)
+	if !loginResp.NeedsRecoveryCodesAck {
+		t.Fatal("after regenerate login needs ack")
+	}
+}
+
+func TestAcceptInviteEmailTakenAndFull(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:           dir,
+		JWTSecret:         strings.Repeat("k", 32),
+		JWTTTLSeconds:     3600,
+		DefaultQuotaBytes: 1 << 30,
+		MaxUploadBytes:    1 << 20,
+		LogFormat:         "text",
+		LogLevel:          "error",
+		MaxUsers:          100,
+		InviteTTLDays:     7,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	admin, err := users.Create(t.Context(), "admin@example.com", "secret123", "Admin", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	h := httpapi.NewAPI(cfg, users, tokens, syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes),
+		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+	adminTok, _, _ := tokens.Issue(admin.ID, admin.Email, 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var inv struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+
+	body := `{"email":"admin@example.com","password":"password123","displayName":"X"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 409 {
+		t.Fatalf("email taken want 409 got %d %s", rec.Code, rec.Body.String())
+	}
+
+	cfg.MaxUsers = 1
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+	body = `{"email":"new@example.com","password":"password123","displayName":"New"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("full want 403 got %d %s", rec.Code, rec.Body.String())
+	}
+}

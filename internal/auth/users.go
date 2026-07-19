@@ -24,6 +24,7 @@ type User struct {
 	PasswordVersion        int
 	QuotaBytes             sql.NullInt64 // Valid=false → server default; Int64=0 → unlimited
 	RecoveryCodesAckedAt   sql.NullString
+	RecoveryCodesGeneration int
 	CreatedAt              string
 	UpdatedAt              string
 }
@@ -92,7 +93,13 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("ensure schema: %w", err)
 	}
+	if err := ensureRecoveryGenerationColumn(s.db); err != nil {
+		return err
+	}
 	if err := ensureInvitesSchema(s.db); err != nil {
+		return err
+	}
+	if err := ensureRecoveryCodesSchema(s.db); err != nil {
 		return err
 	}
 	return nil
@@ -108,7 +115,7 @@ func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-const userSelectCols = `id, email, password_hash, display_name, is_admin, disabled_at, password_version, quota_bytes, recovery_codes_acked_at, created_at, updated_at`
+const userSelectCols = `id, email, password_hash, display_name, is_admin, disabled_at, password_version, quota_bytes, recovery_codes_acked_at, recovery_codes_generation, created_at, updated_at`
 
 // Create inserts a new user. password must already meet strength rules.
 // displayName is required. First user is always admin; otherwise asAdmin controls the flag.
@@ -175,19 +182,20 @@ func (s *UserStore) create(ctx context.Context, email, password, displayName str
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	u := &User{
-		ID:              uuid.NewString(),
-		Email:           email,
-		PasswordHash:    hash,
-		DisplayName:     displayName,
-		IsAdmin:         isAdmin,
-		PasswordVersion: 0,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                    uuid.NewString(),
+		Email:                 email,
+		PasswordHash:          hash,
+		DisplayName:           displayName,
+		IsAdmin:               isAdmin,
+		PasswordVersion:       0,
+		RecoveryCodesAckedAt:  sql.NullString{String: now, Valid: true},
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	_, err = conn.ExecContext(ctx,
-		`INSERT INTO users (id, email, password_hash, display_name, is_admin, password_version, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-		u.ID, u.Email, u.PasswordHash, u.DisplayName, adminFlag, u.CreatedAt, u.UpdatedAt,
+		`INSERT INTO users (id, email, password_hash, display_name, is_admin, password_version, recovery_codes_acked_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+		u.ID, u.Email, u.PasswordHash, u.DisplayName, adminFlag, now, u.CreatedAt, u.UpdatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -367,7 +375,7 @@ func (s *UserStore) scanOne(ctx context.Context, query string, arg any) (*User, 
 	err := s.db.QueryRowContext(ctx, query, arg).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
 		&isAdmin, &u.DisabledAt, &u.PasswordVersion, &u.QuotaBytes, &u.RecoveryCodesAckedAt,
-		&u.CreatedAt, &u.UpdatedAt,
+		&u.RecoveryCodesGeneration, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

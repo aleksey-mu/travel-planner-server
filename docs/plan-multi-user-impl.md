@@ -102,7 +102,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S5 — Accept + recovery codes + ack
+### S5 — Accept + recovery codes + ack ✅
 
 **Product:** §3.1 mid-join, §5  
 **Do:**
@@ -114,7 +114,7 @@ cmd/server/        # CLI extensions
 - Concurrent accept: only one wins (SQLite transaction).
 
 **Tests:** accept once; concurrent; email 409; full 403; ack clears flag; unacked → regenerate returns new codes.  
-**Accept:** full accept→ack→login `needsRecoveryCodesAck=false`.
+**Accept:** `go test ./internal/auth/... ./internal/httpapi/... ./internal/config/... ./cmd/server/...`
 
 ---
 
