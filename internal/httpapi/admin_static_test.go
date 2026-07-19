@@ -45,6 +45,59 @@ func TestAdminStaticServesWithCSP(t *testing.T) {
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/" {
 		t.Fatalf("redirect /admin -> /admin/: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/join?token=abc123", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/join/?token=abc123" {
+		t.Fatalf("join redirect must keep query: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestJoinAndResetPasswordStaticPages(t *testing.T) {
+	h := testAPI(t, false, nil, 1<<30, 1<<20)
+
+	req := httptest.NewRequest(http.MethodGet, "/join/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("GET /join/ %d", rec.Code)
+	}
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "object-src 'none'") {
+		t.Fatal("join CSP")
+	}
+	if !strings.Contains(rec.Body.String(), "/join/app.js") {
+		t.Fatal("join html")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/join/app.js", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/api/v1/invites/") {
+		t.Fatalf("join app.js %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "recovery-codes/ack") {
+		t.Fatal("join must ack recovery codes")
+	}
+	if !strings.Contains(rec.Body.String(), "password2") && !strings.Contains(rec.Body.String(), "Passwords must match") {
+		t.Fatal("join must confirm password")
+	}
+	if !strings.Contains(rec.Body.String(), "code-check") {
+		t.Fatal("join must verify a recovery code before ack")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/reset-password/", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/reset-password/app.js") {
+		t.Fatalf("reset html %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/reset-password/app.js", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/api/v1/password-reset/") {
+		t.Fatalf("reset app.js %d", rec.Code)
+	}
 }
 
 func TestAdminPanelLoginListCreateInviteAndUnlimitedQuota(t *testing.T) {

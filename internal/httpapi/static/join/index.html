@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join TravelPlan server</title>
+  <link rel="stylesheet" href="/join/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Join this sync server</h1>
+    <p class="hint">Fallback page for browsers. Prefer the TravelPlan app when available.</p>
+
+    <section id="step-trust" class="card">
+      <h2>1 — Trust</h2>
+      <label>Invite token <input id="token" type="text" autocomplete="off" /></label>
+      <button type="button" id="btn-load" class="primary">Check invite</button>
+      <p id="trust-error" class="error" role="alert"></p>
+      <div id="trust-box" class="hidden">
+        <p id="trust-summary"></p>
+        <p id="trust-expires" class="meta"></p>
+        <p id="trust-full" class="error hidden">This server is full. Ask an admin to free a seat.</p>
+        <label class="check">
+          <input id="trust-ok" type="checkbox" />
+          <span>I trust this host and its admins. Only join people and servers you know.</span>
+        </label>
+        <button type="button" id="btn-continue" class="primary" disabled>Continue</button>
+      </div>
+    </section>
+
+    <section id="step-account" class="card hidden">
+      <h2>2 — Account</h2>
+      <label>Email <input id="email" type="email" autocomplete="username" /></label>
+      <label>Display name <input id="display-name" type="text" autocomplete="nickname" /></label>
+      <label>Password <input id="password" type="password" autocomplete="new-password" /></label>
+      <label>Confirm password <input id="password2" type="password" autocomplete="new-password" /></label>
+      <button type="button" id="btn-accept" class="primary">Create account</button>
+      <p id="account-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="step-codes" class="card hidden">
+      <h2>3 — Recovery codes</h2>
+      <p class="hint">Save these codes now. They are shown once. You need them to reset your password without an admin.</p>
+      <div id="codes" class="codes"></div>
+      <label>Type one code to confirm you saved them
+        <input id="code-check" type="text" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="check">
+        <input id="codes-saved" type="checkbox" />
+        <span>I saved these codes somewhere safe.</span>
+      </label>
+      <button type="button" id="btn-ack" class="primary" disabled>Done</button>
+      <p id="codes-error" class="error" role="alert"></p>
+      <p id="codes-done" class="flash hidden">You’re in. Open TravelPlan, connect to this server URL, and sign in with your email and password.</p>
+    </section>
+  </div>
+  <script src="/join/app.js"></script>
+</body>
+</html>

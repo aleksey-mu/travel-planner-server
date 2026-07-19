@@ -15,11 +15,11 @@ type createInviteRequest struct {
 }
 
 type trustPayload struct {
-	PublicBaseURL      string   `json:"publicBaseUrl"`
-	ServerName         string   `json:"serverName"`
-	AdminDisplayNames  []string `json:"adminDisplayNames"`
-	UserCount          int64    `json:"userCount"`
-	MaxUsers           int      `json:"maxUsers"`
+	PublicBaseURL     string   `json:"publicBaseUrl"`
+	ServerName        string   `json:"serverName"`
+	AdminDisplayNames []string `json:"adminDisplayNames"`
+	UserCount         int64    `json:"userCount"`
+	MaxUsers          int      `json:"maxUsers"`
 }
 
 func (a *API) buildTrustPayload(r *http.Request) (trustPayload, error) {
@@ -175,7 +175,7 @@ func inviteCreateResponse(publicBase string, created *auth.CreatedInvite) map[st
 		"createdAt": inv.CreatedAt,
 	}
 	if publicBase != "" {
-		resp["inviteUrl"] = strings.TrimSuffix(publicBase, "/") + "/join?token=" + url.QueryEscape(created.RawToken)
+		resp["inviteUrl"] = strings.TrimSuffix(publicBase, "/") + "/join/?token=" + url.QueryEscape(created.RawToken)
 	}
 	return resp
 }

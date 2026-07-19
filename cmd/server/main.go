@@ -340,7 +340,7 @@ func runCreateInvite(args []string) int {
 	fmt.Printf("token=%s\n", created.RawToken)
 	fmt.Printf("expiresAt=%s\n", created.Invite.ExpiresAt)
 	if cfg.PublicBaseURL != "" {
-		fmt.Printf("inviteUrl=%s/join?token=%s\n",
+		fmt.Printf("inviteUrl=%s/join/?token=%s\n",
 			strings.TrimSuffix(cfg.PublicBaseURL, "/"), created.RawToken)
 	}
 	return 0
@@ -413,7 +413,7 @@ func runCreateResetLink(args []string) int {
 	fmt.Printf("token=%s\n", created.RawToken)
 	fmt.Printf("expiresAt=%s\n", created.Token.ExpiresAt)
 	if cfg.PublicBaseURL != "" {
-		fmt.Printf("resetUrl=%s/reset-password?token=%s\n",
+		fmt.Printf("resetUrl=%s/reset-password/?token=%s\n",
 			strings.TrimSuffix(cfg.PublicBaseURL, "/"), created.RawToken)
 	}
 	return 0

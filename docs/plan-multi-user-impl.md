@@ -177,7 +177,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S10 — Server README + thin `/join` + `/reset-password` HTML
+### S10 — Server README + thin `/join` + `/reset-password` HTML ✅
 
 **Product:** §10, §3.1  
 **Do:**

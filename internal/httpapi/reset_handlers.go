@@ -160,7 +160,7 @@ func (a *API) handleAdminCreatePasswordReset(w http.ResponseWriter, r *http.Requ
 	}
 	if a.cfg.PublicBaseURL != "" {
 		resp["resetUrl"] = strings.TrimSuffix(a.cfg.PublicBaseURL, "/") +
-			"/reset-password?token=" + url.QueryEscape(created.RawToken)
+			"/reset-password/?token=" + url.QueryEscape(created.RawToken)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)

@@ -75,7 +75,7 @@ func (a *API) registerRoutes(mux *http.ServeMux) {
 		}))
 	}
 
-	a.registerAdminStatic(mux)
+	a.registerPublicStatic(mux)
 
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 	mux.HandleFunc("POST /api/v1/auth/register", a.handleRegister)

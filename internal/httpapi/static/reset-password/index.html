@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset password</title>
+  <link rel="stylesheet" href="/reset-password/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Reset password</h1>
+    <p class="hint">Fallback page for admin reset links. Prefer the TravelPlan app when available.</p>
+
+    <section class="card">
+      <label>Reset token <input id="token" type="text" autocomplete="off" /></label>
+      <button type="button" id="btn-load" class="primary">Check link</button>
+      <p id="load-error" class="error" role="alert"></p>
+      <div id="info" class="hidden">
+        <p id="summary"></p>
+        <p id="expires" class="meta"></p>
+      </div>
+    </section>
+
+    <section id="form" class="card hidden">
+      <h2>New password</h2>
+      <label>Password <input id="password" type="password" autocomplete="new-password" /></label>
+      <label>Confirm <input id="password2" type="password" autocomplete="new-password" /></label>
+      <button type="button" id="btn-save" class="primary">Set password</button>
+      <p id="form-error" class="error" role="alert"></p>
+      <p id="done" class="flash hidden">Password updated. Open TravelPlan and sign in with your email and new password.</p>
+    </section>
+  </div>
+  <script src="/reset-password/app.js"></script>
+</body>
+</html>
