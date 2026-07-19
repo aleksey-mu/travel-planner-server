@@ -7,8 +7,8 @@ Instead of linking Google Drive / OneDrive / Dropbox, the app talks to this serv
 **Status (multi-user in progress)**
 
 - **Breaking / unreleased:** wipe `DATA_DIR` when upgrading builds — no DB or API compatibility.
-- Auth: email + password → JWT (no OAuth, no SMTP).
-- Today CLI/seed still allow **one** account until multi-user S3 lands; target is N private vaults (invites) — see `docs/plan-multi-user.md`.
+- Auth: email + password → JWT (no OAuth, no SMTP). Open register always disabled; use CLI/`create-user` (and later invites).
+- Multiple private vaults via CLI already; invite/admin UI is later steps — see `docs/plan-multi-user.md`.
 - Quota API is the Phase 2 JSON shape (below), not `{usage,limit}`.
 
 ---
@@ -63,17 +63,17 @@ docker compose up -d --build
 4. Verify: `curl -s https://YOUR_HOST/api/v1/health`
 5. After first successful owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and run `docker compose up -d` again.
 
-Create / reset owner without seed:
+Create / reset users without seed:
 
 ```bash
 docker compose exec travelplan-server /travelplan-server create-user \
-  --email you@example.com --password '…' --display-name You
+  --email you@example.com --password '…' --display-name You [--admin]
 
 docker compose exec travelplan-server /travelplan-server set-password \
   --email you@example.com --password '…'
 ```
 
-Until multi-user create ships, a second `create-user` still fails (single account). Wipe `/data` when switching major builds.
+`MAX_USERS` (default 100) caps accounts. Wipe `/data` when switching major builds.
 
 ### Option B — Coolify
 

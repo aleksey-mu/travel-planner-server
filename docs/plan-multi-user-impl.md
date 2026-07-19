@@ -70,18 +70,18 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S3 — Lift single-owner gate + kill open register
+### S3 — Lift single-owner gate + kill open register ✅
 
 **Product:** §1, §4  
 **Do:**
 
-- Remove `ErrOwnerExists` / Count≥1 on Create.  
-- `POST /auth/register` → always **403** (or delete route).  
-- Enforce `MAX_USERS` on create-user CLI (and later accept).  
-- CLI: `--display-name` **required**; `--admin` flag.
+- Remove `ErrOwnerExists`; `Create(…, asAdmin, maxUsers)`.  
+- `POST /auth/register` always **403**.  
+- CLI: `--display-name` required, `--admin`; enforce `MAX_USERS`.  
+- First user always admin.
 
-**Tests:** two CLI users OK; third when `MAX_USERS=2` fails; register 403.  
-**Accept:** CLI create two users; register blocked.
+**Tests:** two users; third at MAX_USERS=2 fails; register 403; CLI create-user; seed skips when users exist.  
+**Accept:** `go test ./internal/auth/... ./internal/httpapi/... ./cmd/server/...`
 
 ---
 

@@ -12,12 +12,6 @@ import (
 
 const authBodyLimit = 64 << 10 // 64 KiB
 
-type registerRequest struct {
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	DisplayName string `json:"displayName"`
-}
-
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -40,42 +34,9 @@ func decodeAuthJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if !a.cfg.AllowRegister {
-		writeError(w, http.StatusForbidden, "REGISTER_DISABLED", "registration is disabled")
-		return
-	}
-	var req registerRequest
-	if !decodeAuthJSON(w, r, &req) {
-		return
-	}
-	req.Email = strings.TrimSpace(req.Email)
-	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email and password are required")
-		return
-	}
-	if err := auth.ValidatePasswordStrength(req.Password); err != nil {
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-		return
-	}
-	u, err := a.users.Create(r.Context(), req.Email, req.Password, req.DisplayName)
-	if errors.Is(err, auth.ErrOwnerExists) {
-		writeError(w, http.StatusForbidden, "OWNER_EXISTS", "vault already has an owner")
-		return
-	}
-	if errors.Is(err, auth.ErrConflict) {
-		writeError(w, http.StatusConflict, "CONFLICT", "email already registered")
-		return
-	}
-	if err != nil {
-		a.log.Error("register", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create user")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"userId": u.ID,
-		"email":  u.Email,
-	})
+func (a *API) handleRegister(w http.ResponseWriter, _ *http.Request) {
+	// Closed registration — invites / CLI only (hard-cut; ALLOW_REGISTER ignored).
+	writeError(w, http.StatusForbidden, "REGISTER_DISABLED", "registration is disabled")
 }
 
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {

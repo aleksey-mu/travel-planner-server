@@ -54,7 +54,7 @@ func printUsage() {
 
 Usage:
   travelplan-server [serve]
-  travelplan-server create-user --email EMAIL --password PASS [--display-name NAME]
+  travelplan-server create-user --email EMAIL --password PASS --display-name NAME [--admin]
   travelplan-server set-password --email EMAIL --password PASS
   travelplan-server healthcheck
 
@@ -156,23 +156,28 @@ func seedAdmin(ctx context.Context, users *auth.UserStore, cfg *config.Config, l
 	if cfg.SeedAdminPassword == "" {
 		return fmt.Errorf("SEED_ADMIN_PASSWORD required when SEED_ADMIN_EMAIL is set")
 	}
-	_, err := users.GetByEmail(ctx, email)
-	if err == nil {
-		log.Info("seed admin already exists", "email", auth.NormalizeEmail(email))
-		if cfg.SeedAdminPassword != "" {
+
+	u, err := users.CreateIfEmpty(ctx, email, cfg.SeedAdminPassword, cfg.SeedAdminDisplayName, cfg.MaxUsers)
+	if errors.Is(err, auth.ErrUsersExist) {
+		_, getErr := users.GetByEmail(ctx, email)
+		if getErr == nil {
+			log.Info("seed admin already exists", "email", auth.NormalizeEmail(email))
 			log.Warn("SEED_ADMIN_PASSWORD is still set; remove it from the container environment after first boot")
+			return nil
 		}
+		if !errors.Is(getErr, auth.ErrNotFound) {
+			return getErr
+		}
+		// Leftover SEED_ADMIN_* must not create an extra admin once any user exists.
+		log.Info("seed skipped: users already exist")
 		return nil
 	}
-	if !errors.Is(err, auth.ErrNotFound) {
-		return err
+	if errors.Is(err, auth.ErrConflict) {
+		log.Info("seed admin already exists", "email", auth.NormalizeEmail(email))
+		return nil
 	}
-	u, err := users.Create(ctx, email, cfg.SeedAdminPassword, cfg.SeedAdminDisplayName)
-	if errors.Is(err, auth.ErrOwnerExists) {
-		log.Warn("seed skipped: vault already has an owner (SEED_ADMIN_EMAIL does not match existing user)")
-		if cfg.SeedAdminPassword != "" {
-			log.Warn("SEED_ADMIN_PASSWORD is still set; remove it from the container environment")
-		}
+	if errors.Is(err, auth.ErrUserLimit) {
+		log.Warn("seed skipped: MAX_USERS reached")
 		return nil
 	}
 	if err != nil {
@@ -183,19 +188,27 @@ func seedAdmin(ctx context.Context, users *auth.UserStore, cfg *config.Config, l
 	return nil
 }
 
+// loadCLIConfig is swapped in tests to avoid os.Exit from loadConfigOrExit.
+var loadCLIConfig = loadConfigOrExit
+
 func runCreateUser(args []string) int {
 	fs := flag.NewFlagSet("create-user", flag.ContinueOnError)
 	email := fs.String("email", "", "user email")
 	password := fs.String("password", "", "user password")
-	displayName := fs.String("display-name", "", "display name")
+	displayName := fs.String("display-name", "", "display name (required)")
+	asAdmin := fs.Bool("admin", false, "grant admin")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *email == "" || *password == "" {
-		fmt.Fprintln(os.Stderr, "create-user requires --email and --password")
+	if *email == "" || *password == "" || strings.TrimSpace(*displayName) == "" {
+		fmt.Fprintln(os.Stderr, "create-user requires --email, --password, and --display-name")
 		return 2
 	}
-	cfg := loadConfigOrExit()
+	cfg := loadCLIConfig()
+	return createUser(cfg, *email, *password, *displayName, *asAdmin)
+}
+
+func createUser(cfg *config.Config, email, password, displayName string, asAdmin bool) int {
 	users, err := auth.OpenUserStore(cfg.DataDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "db: %v\n", err)
@@ -203,13 +216,17 @@ func runCreateUser(args []string) int {
 	}
 	defer users.Close()
 
-	u, err := users.Create(context.Background(), *email, *password, *displayName)
-	if errors.Is(err, auth.ErrOwnerExists) {
-		fmt.Fprintln(os.Stderr, "vault already has an owner (single-account until multi-user create ships)")
+	u, err := users.Create(context.Background(), email, password, displayName, asAdmin, cfg.MaxUsers)
+	if errors.Is(err, auth.ErrUserLimit) {
+		fmt.Fprintf(os.Stderr, "user limit reached (MAX_USERS=%d)\n", cfg.MaxUsers)
 		return 1
 	}
 	if errors.Is(err, auth.ErrConflict) {
 		fmt.Fprintln(os.Stderr, "email already registered")
+		return 1
+	}
+	if errors.Is(err, auth.ErrDisplayNameRequired) {
+		fmt.Fprintln(os.Stderr, "display name is required")
 		return 1
 	}
 	if err != nil {

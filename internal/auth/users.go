@@ -34,8 +34,14 @@ var ErrNotFound = errors.New("user not found")
 // ErrConflict is returned when email is already taken.
 var ErrConflict = errors.New("email already registered")
 
-// ErrOwnerExists is returned when Create refuses a second user (removed in multi-user S3).
-var ErrOwnerExists = errors.New("vault already has an owner")
+// ErrUserLimit is returned when MAX_USERS is reached (all rows count).
+var ErrUserLimit = errors.New("user limit reached")
+
+// ErrDisplayNameRequired is returned when display name is empty.
+var ErrDisplayNameRequired = errors.New("display name is required")
+
+// ErrUsersExist is returned by CreateIfEmpty when the users table is not empty.
+var ErrUsersExist = errors.New("users already exist")
 
 // UserStore persists accounts in SQLite.
 type UserStore struct {
@@ -102,11 +108,26 @@ func NormalizeEmail(email string) string {
 const userSelectCols = `id, email, password_hash, display_name, is_admin, disabled_at, password_version, quota_bytes, recovery_codes_acked_at, created_at, updated_at`
 
 // Create inserts a new user. password must already meet strength rules.
-// Until multi-user S3: at most one user; that user is always admin.
-func (s *UserStore) Create(ctx context.Context, email, password, displayName string) (*User, error) {
+// displayName is required. First user is always admin; otherwise asAdmin controls the flag.
+// maxUsers: 0 = unlimited; otherwise Count (incl. disabled) must be < maxUsers.
+func (s *UserStore) Create(ctx context.Context, email, password, displayName string, asAdmin bool, maxUsers int) (*User, error) {
+	return s.create(ctx, email, password, displayName, asAdmin, maxUsers, false)
+}
+
+// CreateIfEmpty inserts a user only when the table is empty (same IMMEDIATE txn as the count).
+// Used by boot seed so a concurrent create-user cannot race past a non-atomic empty check.
+func (s *UserStore) CreateIfEmpty(ctx context.Context, email, password, displayName string, maxUsers int) (*User, error) {
+	return s.create(ctx, email, password, displayName, true, maxUsers, true)
+}
+
+func (s *UserStore) create(ctx context.Context, email, password, displayName string, asAdmin bool, maxUsers int, requireEmpty bool) (*User, error) {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("email is required")
+	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return nil, ErrDisplayNameRequired
 	}
 	if err := ValidatePasswordStrength(password); err != nil {
 		return nil, err
@@ -136,8 +157,17 @@ func (s *UserStore) Create(ctx context.Context, email, password, displayName str
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
 		return nil, fmt.Errorf("count users: %w", err)
 	}
-	if n >= 1 {
-		return nil, ErrOwnerExists
+	if requireEmpty && n > 0 {
+		return nil, ErrUsersExist
+	}
+	if maxUsers > 0 && n >= int64(maxUsers) {
+		return nil, ErrUserLimit
+	}
+
+	isAdmin := asAdmin || n == 0
+	adminFlag := 0
+	if isAdmin {
+		adminFlag = 1
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -145,16 +175,16 @@ func (s *UserStore) Create(ctx context.Context, email, password, displayName str
 		ID:              uuid.NewString(),
 		Email:           email,
 		PasswordHash:    hash,
-		DisplayName:     strings.TrimSpace(displayName),
-		IsAdmin:         true,
+		DisplayName:     displayName,
+		IsAdmin:         isAdmin,
 		PasswordVersion: 0,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 	_, err = conn.ExecContext(ctx,
 		`INSERT INTO users (id, email, password_hash, display_name, is_admin, password_version, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 1, 0, ?, ?)`,
-		u.ID, u.Email, u.PasswordHash, u.DisplayName, u.CreatedAt, u.UpdatedAt,
+		 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+		u.ID, u.Email, u.PasswordHash, u.DisplayName, adminFlag, u.CreatedAt, u.UpdatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {

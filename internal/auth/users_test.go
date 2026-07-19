@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -22,7 +23,7 @@ func TestEnsureSchemaAndCreateAdmin(t *testing.T) {
 
 	assertColumns(t, store.db)
 
-	u, err := store.Create(context.Background(), "admin@example.com", "password123", "Admin")
+	u, err := store.Create(context.Background(), "admin@example.com", "password123", "Admin", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +66,69 @@ func TestEnsureSchemaAndCreateAdmin(t *testing.T) {
 	}
 }
 
+func TestCreateIfEmptyRejectsWhenUsersExist(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenUserStore(filepath.ToSlash(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if _, err := store.Create(context.Background(), "a@example.com", "password123", "A", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CreateIfEmpty(context.Background(), "seed@example.com", "password123", "Seed", 0)
+	if !errors.Is(err, ErrUsersExist) {
+		t.Fatalf("want ErrUsersExist got %v", err)
+	}
+	n, err := store.Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("userCount=%d want 1", n)
+	}
+}
+
+func TestCreateTwoUsersAndMaxUsers(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenUserStore(filepath.ToSlash(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	a, err := store.Create(context.Background(), "a@example.com", "password123", "A", false, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.IsAdmin {
+		t.Fatal("first user must be admin")
+	}
+	b, err := store.Create(context.Background(), "b@example.com", "password123", "B", false, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.IsAdmin {
+		t.Fatal("second user should not be admin without --admin")
+	}
+	_, err = store.Create(context.Background(), "c@example.com", "password123", "C", false, 2)
+	if !errors.Is(err, ErrUserLimit) {
+		t.Fatalf("want ErrUserLimit got %v", err)
+	}
+	_, err = store.Create(context.Background(), "c@example.com", "password123", "", false, 0)
+	if !errors.Is(err, ErrDisplayNameRequired) {
+		t.Fatalf("want ErrDisplayNameRequired got %v", err)
+	}
+	c, err := store.Create(context.Background(), "c@example.com", "password123", "C", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.IsAdmin {
+		t.Fatal("explicit admin")
+	}
+}
+
 func TestSetPasswordBumpsVersion(t *testing.T) {
 	dir := t.TempDir()
 	store, err := OpenUserStore(filepath.ToSlash(dir))
@@ -72,7 +136,7 @@ func TestSetPasswordBumpsVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	u, err := store.Create(context.Background(), "a@example.com", "password123", "A")
+	u, err := store.Create(context.Background(), "a@example.com", "password123", "A", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +159,7 @@ func TestMiddlewareRejectsPwdMismatchAndDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	u, err := store.Create(context.Background(), "a@example.com", "password123", "A")
+	u, err := store.Create(context.Background(), "a@example.com", "password123", "A", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +214,7 @@ func TestAdminMiddlewareLiveIsAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	u, err := store.Create(context.Background(), "a@example.com", "password123", "A")
+	u, err := store.Create(context.Background(), "a@example.com", "password123", "A", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

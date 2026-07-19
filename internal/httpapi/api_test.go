@@ -44,7 +44,7 @@ func testAPIWithUsers(t *testing.T, allowRegister bool, cors []string, quota, ma
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = users.Close() })
-	_, err = users.Create(t.Context(), "you@example.com", "secret123", "You")
+	_, err = users.Create(t.Context(), "you@example.com", "secret123", "You", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,15 +227,18 @@ func TestSyncQuotaShape(t *testing.T) {
 	}
 }
 
-func TestRegisterEnabledOwnerExists(t *testing.T) {
+func TestRegisterAlwaysDisabled(t *testing.T) {
 	h := testAPI(t, true, nil, 1<<30, 1<<20)
-	body := `{"email":"other@example.com","password":"password1"}`
+	body := `{"email":"other@example.com","password":"password1","displayName":"Other"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 403 {
-		t.Fatalf("want 403 OWNER_EXISTS got %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("want 403 REGISTER_DISABLED got %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "REGISTER_DISABLED") {
+		t.Fatalf("body=%s", rec.Body.String())
 	}
 }
 
