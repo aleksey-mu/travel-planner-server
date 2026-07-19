@@ -37,6 +37,20 @@ func main() {
 			os.Exit(runRevokeInvite(os.Args[2:]))
 		case "create-reset-link":
 			os.Exit(runCreateResetLink(os.Args[2:]))
+		case "list-users":
+			os.Exit(runListUsers(os.Args[2:]))
+		case "set-quota":
+			os.Exit(runSetQuota(os.Args[2:]))
+		case "disable-user":
+			os.Exit(runDisableUser(os.Args[2:]))
+		case "enable-user":
+			os.Exit(runEnableUser(os.Args[2:]))
+		case "delete-user":
+			os.Exit(runDeleteUser(os.Args[2:]))
+		case "promote-admin":
+			os.Exit(runPromoteAdmin(os.Args[2:]))
+		case "demote-admin":
+			os.Exit(runDemoteAdmin(os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheck())
 		case "help", "-h", "--help":
@@ -65,6 +79,13 @@ Usage:
   travelplan-server create-invite [--expires-days N] [--label TEXT]
   travelplan-server revoke-invite --id ID
   travelplan-server create-reset-link --email EMAIL
+  travelplan-server list-users
+  travelplan-server set-quota --email EMAIL --mb N|default|unlimited
+  travelplan-server disable-user --email EMAIL
+  travelplan-server enable-user --email EMAIL
+  travelplan-server delete-user --email EMAIL
+  travelplan-server promote-admin --email EMAIL
+  travelplan-server demote-admin --email EMAIL
   travelplan-server healthcheck
 
 `, version.Version)
@@ -395,6 +416,174 @@ func runCreateResetLink(args []string) int {
 		fmt.Printf("resetUrl=%s/reset-password?token=%s\n",
 			strings.TrimSuffix(cfg.PublicBaseURL, "/"), created.RawToken)
 	}
+	return 0
+}
+
+func runListUsers(args []string) int {
+	fs := flag.NewFlagSet("list-users", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	list, err := users.ListAllUsers(context.Background())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "list-users: %v\n", err)
+		return 1
+	}
+	for _, u := range list {
+		quota := "default"
+		if u.QuotaBytes.Valid {
+			if u.QuotaBytes.Int64 == 0 {
+				quota = "unlimited"
+			} else {
+				quota = fmt.Sprintf("%d", u.QuotaBytes.Int64)
+			}
+		}
+		fmt.Printf("%s\t%s\t%s\tadmin=%v\tdisabled=%v\tquota=%s\n",
+			u.ID, u.Email, u.DisplayName, u.IsAdmin, u.IsDisabled(), quota)
+	}
+	return 0
+}
+
+func runSetQuota(args []string) int {
+	fs := flag.NewFlagSet("set-quota", flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	mb := fs.String("mb", "", "default | unlimited | positive MiB")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" || *mb == "" {
+		fmt.Fprintln(os.Stderr, "set-quota requires --email and --mb")
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	err = users.SetQuotaCLI(context.Background(), *email, *mb)
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "user not found")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "set-quota: %v\n", err)
+		return 1
+	}
+	fmt.Println("ok")
+	return 0
+}
+
+func runDisableUser(args []string) int {
+	return runEmailPatchCLI("disable-user", args, func(users *auth.UserStore, email string) error {
+		return users.DisableUserCLI(context.Background(), email)
+	})
+}
+
+func runEnableUser(args []string) int {
+	return runEmailPatchCLI("enable-user", args, func(users *auth.UserStore, email string) error {
+		return users.EnableUserCLI(context.Background(), email)
+	})
+}
+
+func runPromoteAdmin(args []string) int {
+	return runEmailPatchCLI("promote-admin", args, func(users *auth.UserStore, email string) error {
+		return users.PromoteAdminCLI(context.Background(), email)
+	})
+}
+
+func runDemoteAdmin(args []string) int {
+	return runEmailPatchCLI("demote-admin", args, func(users *auth.UserStore, email string) error {
+		return users.DemoteAdminCLI(context.Background(), email)
+	})
+}
+
+func runEmailPatchCLI(name string, args []string, fn func(*auth.UserStore, string) error) int {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" {
+		fmt.Fprintf(os.Stderr, "%s requires --email\n", name)
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	err = fn(users, *email)
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "user not found")
+		return 1
+	}
+	if errors.Is(err, auth.ErrLastEnabledAdmin) {
+		fmt.Fprintln(os.Stderr, "cannot disable or demote the last enabled admin")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+		return 1
+	}
+	fmt.Println("ok")
+	return 0
+}
+
+func runDeleteUser(args []string) int {
+	fs := flag.NewFlagSet("delete-user", flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" {
+		fmt.Fprintln(os.Stderr, "delete-user requires --email")
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	u, err := users.GetByEmail(context.Background(), *email)
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "user not found")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "delete-user: %v\n", err)
+		return 1
+	}
+	if err := users.DeleteUserHard(context.Background(), u.ID); err != nil {
+		if errors.Is(err, auth.ErrLastEnabledAdmin) {
+			fmt.Fprintln(os.Stderr, "cannot delete the last enabled admin while other users remain")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "delete-user: %v\n", err)
+		return 1
+	}
+	store := syncstore.New(cfg.DataDir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	if err := store.PurgeUser(u.ID); err != nil {
+		fmt.Fprintf(os.Stderr, "delete-user: user removed but vault purge failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("ok")
 	return 0
 }
 

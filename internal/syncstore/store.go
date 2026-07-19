@@ -67,6 +67,20 @@ func (s *Store) userRoot(userID string) (string, error) {
 	return filepath.Join(s.dataDir, "users", userID), nil
 }
 
+// PurgeUser removes the per-user vault directory tree (idempotent if missing).
+func (s *Store) PurgeUser(userID string) error {
+	root, err := s.userRoot(userID)
+	if err != nil {
+		return err
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := os.RemoveAll(root); err != nil {
+		return fmt.Errorf("purge user vault: %w", err)
+	}
+	return nil
+}
+
 // Bootstrap creates the per-user directory tree. Idempotent.
 func (s *Store) Bootstrap(userID string) error {
 	root, err := s.userRoot(userID)

@@ -77,13 +77,18 @@ func (a *API) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/password-reset/{token}", a.handleCompletePasswordReset)
 
 	mux.Handle("GET /api/v1/me", requireAuth(http.HandlerFunc(a.handleMe)))
+	mux.Handle("DELETE /api/v1/me", requireAuth(http.HandlerFunc(a.handleDeleteMe)))
 	mux.Handle("POST /api/v1/me/recovery-codes", requireAuth(http.HandlerFunc(a.handleRegenerateRecoveryCodes)))
 	mux.Handle("POST /api/v1/me/recovery-codes/ack", requireAuth(http.HandlerFunc(a.handleAckRecoveryCodes)))
+	mux.Handle("GET /api/v1/users", requireAuth(http.HandlerFunc(a.handleListUsers)))
 
 	mux.Handle("POST /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminCreateInvite)))
 	mux.Handle("GET /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminListInvites)))
 	mux.Handle("DELETE /api/v1/admin/invites/{id}", requireAdmin(http.HandlerFunc(a.handleAdminRevokeInvite)))
 	mux.Handle("POST /api/v1/admin/users/{id}/password-reset", requireAdmin(http.HandlerFunc(a.handleAdminCreatePasswordReset)))
+	mux.Handle("GET /api/v1/admin/users", requireAdmin(http.HandlerFunc(a.handleAdminListUsers)))
+	mux.Handle("PATCH /api/v1/admin/users/{id}", requireAdmin(http.HandlerFunc(a.handleAdminPatchUser)))
+	mux.Handle("DELETE /api/v1/admin/users/{id}", requireAdmin(http.HandlerFunc(a.handleAdminDeleteUser)))
 
 	mux.Handle("POST /api/v1/sync/bootstrap", requireSync(a.handleBootstrap))
 	mux.Handle("GET /api/v1/sync/quota", requireSync(a.handleQuota))

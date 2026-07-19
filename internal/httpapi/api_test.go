@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -1000,5 +1001,216 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
+	}
+}
+
+func loginEmail(t *testing.T, h http.Handler, email, password string) string {
+	t.Helper()
+	body := `{"email":"` + email + `","password":"` + password + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("login %s %d %s", email, rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.AccessToken == "" {
+		t.Fatal(resp)
+	}
+	return resp.AccessToken
+}
+
+func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
+	h, users := testAPIWithUsers(t, false, nil, 1<<30, 1<<20)
+	admin, err := users.Create(t.Context(), "admin@example.com", "secret123", "Admin", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := users.Create(t.Context(), "member@example.com", "secret123", "Member", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Default fixture user is also first-user admin; demote so admin@ is sole enabled admin.
+	you, err := users.GetByEmail(t.Context(), "you@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	if err := users.ApplyAdminUserPatch(t.Context(), you.ID, auth.AdminUserPatch{IsAdmin: &no}); err != nil {
+		t.Fatal(err)
+	}
+	adminTok := loginEmail(t, h, "admin@example.com", "secret123")
+
+	// refuse demote last enabled admin
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+		strings.NewReader(`{"isAdmin":false}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 409 {
+		t.Fatalf("demote last want 409 got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// promote member, then demote self OK
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+		strings.NewReader(`{"isAdmin":true}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("promote %d %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+		strings.NewReader(`{"isAdmin":false}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("demote self %d %s", rec.Code, rec.Body.String())
+	}
+
+	// re-promote admin for later tests
+	memberTok := loginEmail(t, h, "member@example.com", "secret123")
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+		strings.NewReader(`{"isAdmin":true}`))
+	req.Header.Set("Authorization", "Bearer "+memberTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	adminTok = loginEmail(t, h, "admin@example.com", "secret123")
+
+	// quotaMode personal
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+		strings.NewReader(`{"quotaMode":"personal","quotaBytes":2048}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("quota %d %s", rec.Code, rec.Body.String())
+	}
+	var patched map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &patched)
+	if patched["mode"] != "personal" || patched["configuredLimitBytes"].(float64) != 2048 {
+		t.Fatalf("%v", patched)
+	}
+
+	// cannot delete self via admin API
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+admin.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("delete self admin want 400 got %d", rec.Code)
+	}
+
+	// sole admin with members: DELETE /me blocked
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+		strings.NewReader(`{"isAdmin":false}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 409 {
+		t.Fatalf("DELETE /me sole want 409 got %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+member.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 204 {
+		t.Fatalf("delete member %d %s", rec.Code, rec.Body.String())
+	}
+	_, err = users.GetByID(t.Context(), member.ID)
+	if !errors.Is(err, auth.ErrNotFound) {
+		t.Fatalf("member should be gone: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var dirResp struct {
+		Users []map[string]any `json:"users"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &dirResp)
+	if len(dirResp.Users) < 1 {
+		t.Fatal(dirResp)
+	}
+}
+
+func TestDeleteMePurgesVault(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:           dir,
+		JWTSecret:         strings.Repeat("k", 32),
+		HTTPAddr:          ":0",
+		JWTTTLSeconds:     3600,
+		DefaultQuotaBytes: 1 << 30,
+		MaxUploadBytes:    1 << 20,
+		LogFormat:         "text",
+		LogLevel:          "error",
+		MaxUsers:          100,
+		InviteTTLDays:     7,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	u, err := users.Create(t.Context(), "alone@example.com", "secret123", "Alone", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	if err := store.Bootstrap(u.ID); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "users", u.ID, "travels", "x.json")
+	if err := os.WriteFile(marker, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+	tok := loginEmail(t, h, "alone@example.com", "secret123")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 204 {
+		t.Fatalf("DELETE /me %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "users", u.ID)); !os.IsNotExist(err) {
+		t.Fatalf("vault should be purged: %v", err)
 	}
 }

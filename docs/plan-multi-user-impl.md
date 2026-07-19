@@ -133,7 +133,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S7 — Admin user ops + last-enabled-admin rules
+### S7 — Admin user ops + last-enabled-admin rules ✅
 
 **Product:** §3.4, §3.7, §3.9  
 **Do:**
