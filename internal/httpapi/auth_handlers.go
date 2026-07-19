@@ -45,6 +45,9 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
+	if !a.checkAuthRateLimit(w, r, "login", auth.NormalizeEmail(req.Email)) {
+		return
+	}
 	if req.Email == "" || req.Password == "" {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid email or password")
 		return

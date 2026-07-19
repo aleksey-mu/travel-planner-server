@@ -6,23 +6,26 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 const (
-	DefaultHTTPAddr                 = ":8080"
-	DefaultJWTTTLSeconds            = 3600
-	VaultQuotaMB                    = int64(10240) // 10 GiB
-	DefaultMaxUploadMB              = int64(50)
-	BytesPerMB                      = int64(1024 * 1024)
-	DefaultLogFormat                = "json"
-	DefaultLogLevel                 = "info"
-	DefaultSeedDisplayName          = "Admin"
-	MinJWTSecretLen                 = 32
-	DefaultMaxUsers                 = 100
-	DefaultInviteTTLDays            = 7
-	DefaultPasswordResetTTLSeconds  = 3600
+	DefaultHTTPAddr                = ":8080"
+	DefaultJWTTTLSeconds           = 3600
+	VaultQuotaMB                   = int64(10240) // 10 GiB
+	DefaultMaxUploadMB             = int64(50)
+	BytesPerMB                     = int64(1024 * 1024)
+	DefaultLogFormat               = "json"
+	DefaultLogLevel                = "info"
+	DefaultSeedDisplayName         = "Admin"
+	MinJWTSecretLen                = 32
+	DefaultMaxUsers                = 100
+	DefaultInviteTTLDays           = 7
+	DefaultPasswordResetTTLSeconds = 3600
+	DefaultAuthRateLimitMax        = 20
+	DefaultAuthRateLimitWindowSec  = 900 // 15 minutes
 )
 
 // Known weak / documented placeholders that must be rejected even if long enough.
@@ -38,24 +41,27 @@ var jwtSecretPlaceholders = []string{
 
 // Config holds validated runtime settings.
 type Config struct {
-	DataDir                    string
-	JWTSecret                  string
-	HTTPAddr                   string
-	CORSOrigins                []string
-	AllowRegister              bool
-	JWTTTLSeconds              int
-	DefaultQuotaBytes          int64
-	MaxUploadBytes             int64
-	LogFormat                  string
-	LogLevel                   string
-	SeedAdminEmail             string
-	SeedAdminPassword          string
-	SeedAdminDisplayName       string
-	ServerName                 string
-	PublicBaseURL              string // optional; must be https:// when set
-	MaxUsers                   int    // 0 = unlimited user seats
-	InviteTTLDays              int
-	PasswordResetTTLSeconds    int
+	DataDir                 string
+	JWTSecret               string
+	HTTPAddr                string
+	CORSOrigins             []string
+	AllowRegister           bool
+	JWTTTLSeconds           int
+	DefaultQuotaBytes       int64
+	MaxUploadBytes          int64
+	LogFormat               string
+	LogLevel                string
+	SeedAdminEmail          string
+	SeedAdminPassword       string
+	SeedAdminDisplayName    string
+	ServerName              string
+	PublicBaseURL           string // optional; must be https:// when set
+	MaxUsers                int    // 0 = unlimited user seats
+	InviteTTLDays           int
+	PasswordResetTTLSeconds int
+	AuthRateLimitMax        int           // attempts per window; 0 = disabled
+	AuthRateLimitWindow     time.Duration // window length
+	TrustProxy              bool          // honor X-Real-IP / X-Forwarded-For (trusted proxy only)
 }
 
 // Load reads environment (optional .env) and validates required fields.
@@ -150,6 +156,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("PASSWORD_RESET_TTL_SECONDS must be positive")
 	}
 
+	rateMax, err := parseInt(os.Getenv("AUTH_RATE_LIMIT_MAX"), DefaultAuthRateLimitMax)
+	if err != nil {
+		return nil, fmt.Errorf("AUTH_RATE_LIMIT_MAX: %w", err)
+	}
+	if rateMax < 0 {
+		return nil, fmt.Errorf("AUTH_RATE_LIMIT_MAX must be >= 0 (0 = disabled)")
+	}
+	rateWindowSec, err := parseInt(os.Getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS"), DefaultAuthRateLimitWindowSec)
+	if err != nil {
+		return nil, fmt.Errorf("AUTH_RATE_LIMIT_WINDOW_SECONDS: %w", err)
+	}
+	if rateWindowSec <= 0 {
+		return nil, fmt.Errorf("AUTH_RATE_LIMIT_WINDOW_SECONDS must be positive")
+	}
+
+	trustProxy, err := parseBool(os.Getenv("TRUST_PROXY"), false)
+	if err != nil {
+		return nil, fmt.Errorf("TRUST_PROXY: %w", err)
+	}
+
 	publicBase, err := parsePublicBaseURL(os.Getenv("PUBLIC_BASE_URL"))
 	if err != nil {
 		return nil, err
@@ -174,6 +200,9 @@ func Load() (*Config, error) {
 		MaxUsers:                maxUsers,
 		InviteTTLDays:           inviteTTL,
 		PasswordResetTTLSeconds: resetTTL,
+		AuthRateLimitMax:        rateMax,
+		AuthRateLimitWindow:     time.Duration(rateWindowSec) * time.Second,
+		TrustProxy:              trustProxy,
 	}, nil
 }
 

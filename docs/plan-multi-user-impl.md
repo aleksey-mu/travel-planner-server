@@ -150,7 +150,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S8 — Rate limits (ship bar)
+### S8 — Rate limits (ship bar) ✅
 
 **Product:** §7, §9 P2  
 **Do:**

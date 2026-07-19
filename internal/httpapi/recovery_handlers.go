@@ -27,6 +27,9 @@ func (a *API) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	if !a.checkAuthRateLimit(w, r, "accept", auth.NormalizeEmail(req.Email)) {
+		return
+	}
 	if req.Email == "" || req.Password == "" || req.DisplayName == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "email, password, and displayName are required")
 		return

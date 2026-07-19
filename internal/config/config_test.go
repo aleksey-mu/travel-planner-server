@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadQuotaAndUploadMB(t *testing.T) {
@@ -20,6 +21,9 @@ func TestLoadQuotaAndUploadMB(t *testing.T) {
 	t.Setenv("MAX_USERS", "")
 	t.Setenv("INVITE_TTL_DAYS", "")
 	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")
+	t.Setenv("AUTH_RATE_LIMIT_MAX", "")
+	t.Setenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "")
+	t.Setenv("TRUST_PROXY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -39,6 +43,15 @@ func TestLoadQuotaAndUploadMB(t *testing.T) {
 	}
 	if cfg.PasswordResetTTLSeconds != DefaultPasswordResetTTLSeconds {
 		t.Fatalf("PasswordResetTTLSeconds=%d", cfg.PasswordResetTTLSeconds)
+	}
+	if cfg.AuthRateLimitMax != DefaultAuthRateLimitMax {
+		t.Fatalf("AuthRateLimitMax=%d", cfg.AuthRateLimitMax)
+	}
+	if cfg.AuthRateLimitWindow != time.Duration(DefaultAuthRateLimitWindowSec)*time.Second {
+		t.Fatalf("AuthRateLimitWindow=%v", cfg.AuthRateLimitWindow)
+	}
+	if cfg.TrustProxy {
+		t.Fatal("TrustProxy should default false")
 	}
 	if cfg.ServerName != "" {
 		t.Fatalf("ServerName=%q", cfg.ServerName)
@@ -63,6 +76,9 @@ func TestLoadMultiUserEnv(t *testing.T) {
 	t.Setenv("MAX_USERS", "50")
 	t.Setenv("INVITE_TTL_DAYS", "14")
 	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "7200")
+	t.Setenv("AUTH_RATE_LIMIT_MAX", "5")
+	t.Setenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "60")
+	t.Setenv("TRUST_PROXY", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -85,6 +101,15 @@ func TestLoadMultiUserEnv(t *testing.T) {
 	}
 	if cfg.PasswordResetTTLSeconds != 7200 {
 		t.Fatalf("PasswordResetTTLSeconds=%d", cfg.PasswordResetTTLSeconds)
+	}
+	if cfg.AuthRateLimitMax != 5 {
+		t.Fatalf("AuthRateLimitMax=%d", cfg.AuthRateLimitMax)
+	}
+	if cfg.AuthRateLimitWindow != time.Minute {
+		t.Fatalf("AuthRateLimitWindow=%v", cfg.AuthRateLimitWindow)
+	}
+	if !cfg.TrustProxy {
+		t.Fatal("TrustProxy")
 	}
 }
 
@@ -164,6 +189,9 @@ func TestLoadRejectsInvalidMultiUserEnv(t *testing.T) {
 		t.Setenv("MAX_USERS", "")
 		t.Setenv("INVITE_TTL_DAYS", "")
 		t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")
+		t.Setenv("AUTH_RATE_LIMIT_MAX", "")
+		t.Setenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "")
+		t.Setenv("TRUST_PROXY", "")
 	}
 	t.Run("max users negative", func(t *testing.T) {
 		base(t)
@@ -182,6 +210,20 @@ func TestLoadRejectsInvalidMultiUserEnv(t *testing.T) {
 	t.Run("reset ttl zero", func(t *testing.T) {
 		base(t)
 		t.Setenv("PASSWORD_RESET_TTL_SECONDS", "0")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("rate window zero", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "0")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("rate max negative", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_RATE_LIMIT_MAX", "-1")
 		if _, err := Load(); err == nil {
 			t.Fatal("expected error")
 		}

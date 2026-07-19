@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aleksey-mu/travel-planner-server/internal/auth"
 	"github.com/aleksey-mu/travel-planner-server/internal/config"
@@ -29,18 +30,20 @@ func testAPIWithUsers(t *testing.T, allowRegister bool, cors []string, quota, ma
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{
-		DataDir:           dir,
-		JWTSecret:         strings.Repeat("k", 32),
-		HTTPAddr:          ":0",
-		CORSOrigins:       cors,
-		AllowRegister:     allowRegister,
-		JWTTTLSeconds:     3600,
-		DefaultQuotaBytes: quota,
-		MaxUploadBytes:    maxUpload,
-		LogFormat:         "text",
-		LogLevel:          "error",
-		MaxUsers:          100,
-		InviteTTLDays:     7,
+		DataDir:               dir,
+		JWTSecret:             strings.Repeat("k", 32),
+		HTTPAddr:              ":0",
+		CORSOrigins:           cors,
+		AllowRegister:         allowRegister,
+		JWTTTLSeconds:         3600,
+		DefaultQuotaBytes:     quota,
+		MaxUploadBytes:        maxUpload,
+		LogFormat:             "text",
+		LogLevel:              "error",
+		MaxUsers:              100,
+		InviteTTLDays:         7,
+		AuthRateLimitMax:      config.DefaultAuthRateLimitMax,
+		AuthRateLimitWindow:   time.Duration(config.DefaultAuthRateLimitWindowSec) * time.Second,
 	}
 	users, err := auth.OpenUserStore(dir)
 	if err != nil {
@@ -1212,5 +1215,166 @@ func TestDeleteMePurgesVault(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "users", u.ID)); !os.IsNotExist(err) {
 		t.Fatalf("vault should be purged: %v", err)
+	}
+}
+
+func TestRecoverRateLimited(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:             dir,
+		JWTSecret:           strings.Repeat("k", 32),
+		HTTPAddr:            ":0",
+		JWTTTLSeconds:       3600,
+		DefaultQuotaBytes:   1 << 30,
+		MaxUploadBytes:      1 << 20,
+		LogFormat:           "text",
+		LogLevel:            "error",
+		MaxUsers:            100,
+		InviteTTLDays:       7,
+		AuthRateLimitMax:    3,
+		AuthRateLimitWindow: time.Hour,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	if _, err := users.Create(t.Context(), "you@example.com", "secret123", "You", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+
+	body := `{"email":"you@example.com","recoveryCode":"AAAA-AAAA-AAAA","password":"password123"}`
+	do := func() *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "203.0.113.9:443"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	for i := 0; i < 3; i++ {
+		rec := do()
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d rate limited early: %s", i+1, rec.Body.String())
+		}
+	}
+	rec := do()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("4th recover want 429 got %d %s", rec.Code, rec.Body.String())
+	}
+	var errBody struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &errBody)
+	if errBody.Error.Code != "RATE_LIMITED" {
+		t.Fatalf("code=%q body=%s", errBody.Error.Code, rec.Body.String())
+	}
+}
+
+func TestLoginRateLimitByEmailAcrossIPs(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:             dir,
+		JWTSecret:           strings.Repeat("k", 32),
+		HTTPAddr:            ":0",
+		JWTTTLSeconds:       3600,
+		DefaultQuotaBytes:   1 << 30,
+		MaxUploadBytes:      1 << 20,
+		LogFormat:           "text",
+		LogLevel:            "error",
+		MaxUsers:            100,
+		AuthRateLimitMax:    2,
+		AuthRateLimitWindow: time.Hour,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	if _, err := users.Create(t.Context(), "you@example.com", "secret123", "You", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+
+	body := `{"email":"you@example.com","password":"wrong-password"}`
+	for i, ip := range []string{"203.0.113.1:1", "203.0.113.2:1"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d from %s limited early", i+1, ip)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.3:1"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("3rd IP same email want 429 got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTrustProxyUsesXForwardedFor(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:             dir,
+		JWTSecret:           strings.Repeat("k", 32),
+		HTTPAddr:            ":0",
+		JWTTTLSeconds:       3600,
+		DefaultQuotaBytes:   1 << 30,
+		MaxUploadBytes:      1 << 20,
+		LogFormat:           "text",
+		LogLevel:            "error",
+		MaxUsers:            100,
+		AuthRateLimitMax:    2,
+		AuthRateLimitWindow: time.Hour,
+		TrustProxy:          true,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	if _, err := users.Create(t.Context(), "you@example.com", "secret123", "You", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+
+	body := `{"email":"a@example.com","password":"x"}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "198.51.100.7")
+		req.RemoteAddr = "10.0.0.1:80"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("early limit %d", i)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"b@example.com","password":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	req.RemoteAddr = "10.0.0.1:80"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("same forwarded IP want 429 got %d", rec.Code)
 	}
 }

@@ -25,6 +25,9 @@ func (a *API) handleRecover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
+	if !a.checkAuthRateLimit(w, r, "recover", auth.NormalizeEmail(req.Email)) {
+		return
+	}
 	if req.Email == "" || req.RecoveryCode == "" || req.Password == "" {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid email or recovery code")
 		return
@@ -72,6 +75,9 @@ func (a *API) writeLoginShaped(w http.ResponseWriter, status int, u *auth.User) 
 
 func (a *API) handleGetPasswordReset(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("token")
+	if !a.checkAuthRateLimit(w, r, "password-reset", rateLimitIdentityHash(raw)) {
+		return
+	}
 	tok, err := a.users.GetPasswordResetToken(r.Context(), raw)
 	if err != nil {
 		writeResetValidateError(w, err)
@@ -86,14 +92,17 @@ func (a *API) handleGetPasswordReset(w http.ResponseWriter, r *http.Request) {
 	_ = tok // validated
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"serverName":         a.cfg.EffectiveServerName(),
-		"adminDisplayNames":  names,
-		"expiresAt":          tok.ExpiresAt,
+		"serverName":        a.cfg.EffectiveServerName(),
+		"adminDisplayNames": names,
+		"expiresAt":         tok.ExpiresAt,
 	})
 }
 
 func (a *API) handleCompletePasswordReset(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("token")
+	if !a.checkAuthRateLimit(w, r, "password-reset", rateLimitIdentityHash(raw)) {
+		return
+	}
 	var req passwordResetBody
 	if !decodeAuthJSON(w, r, &req) {
 		return

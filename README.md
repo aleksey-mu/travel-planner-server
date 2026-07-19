@@ -37,6 +37,8 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 | `SERVER_NAME` | Optional friendly host label |
 | `PUBLIC_BASE_URL` | Optional `https://…` origin used in invite links / trust payload |
 | `MAX_USERS` | Soft account cap (default `100`; `0` = unlimited) |
+| `AUTH_RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_WINDOW_SECONDS` | Brute-force limits on login/recover/accept/password-reset (default `20` / `900`) |
+| `TRUST_PROXY` | `true` only behind a reverse proxy that sets `X-Real-IP` / `X-Forwarded-For` (Coolify etc.); otherwise rate limits see the proxy IP |
 | `VAULT_QUOTA_MB` | Default vault cap in MiB (`10240` ≈ 10 GiB). **`0` = unlimited** (disk still applies) |
 | `MAX_UPLOAD_MB` | Max size of a single attachment, in MiB (default `50`) |
 | `HTTP_PUBLISH_PORT` | Host port for Compose on a VPS (default `8080`). Unused when Coolify’s proxy fronts the container |

@@ -7,21 +7,30 @@ import (
 
 	"github.com/aleksey-mu/travel-planner-server/internal/auth"
 	"github.com/aleksey-mu/travel-planner-server/internal/config"
+	"github.com/aleksey-mu/travel-planner-server/internal/ratelimit"
 	"github.com/aleksey-mu/travel-planner-server/internal/syncstore"
 )
 
 // API holds dependencies for HTTP handlers.
 type API struct {
-	cfg    *config.Config
-	users  *auth.UserStore
-	tokens *auth.TokenManager
-	store  *syncstore.Store
-	log    *slog.Logger
+	cfg     *config.Config
+	users   *auth.UserStore
+	tokens  *auth.TokenManager
+	store   *syncstore.Store
+	log     *slog.Logger
+	limiter *ratelimit.Limiter
 }
 
 // NewAPI constructs an API and wires per-user quota resolution onto the store.
 func NewAPI(cfg *config.Config, users *auth.UserStore, tokens *auth.TokenManager, store *syncstore.Store, log *slog.Logger) *API {
-	a := &API{cfg: cfg, users: users, tokens: tokens, store: store, log: log}
+	a := &API{
+		cfg:     cfg,
+		users:   users,
+		tokens:  tokens,
+		store:   store,
+		log:     log,
+		limiter: ratelimit.New(cfg.AuthRateLimitMax, cfg.AuthRateLimitWindow),
+	}
 	store.SetUserQuotaResolver(func(userID string) (int64, error) {
 		u, err := users.GetByID(context.Background(), userID)
 		if err != nil {
