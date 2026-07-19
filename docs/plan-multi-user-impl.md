@@ -163,7 +163,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S9 — Admin panel `/admin/`
+### S9 — Admin panel `/admin/` ✅
 
 **Product:** §5 surfaces  
 **Do:**

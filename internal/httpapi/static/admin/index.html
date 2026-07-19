@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TravelPlan Admin</title>
+  <link rel="stylesheet" href="/admin/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div>
+        <h1>TravelPlan Admin</h1>
+        <p id="server-label" class="meta"></p>
+      </div>
+      <button type="button" id="btn-logout" class="ghost hidden">Sign out</button>
+    </header>
+
+    <section id="view-login" class="card">
+      <h2>Sign in</h2>
+      <p class="hint">Admin account on this sync server. TravelPlan app tokens are not accepted here.</p>
+      <label>Email <input id="login-email" type="email" autocomplete="username" /></label>
+      <label>Password <input id="login-password" type="password" autocomplete="current-password" /></label>
+      <button type="button" id="btn-login">Sign in</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="view-panel" class="hidden">
+      <p id="panel-error" class="error" role="alert"></p>
+
+      <div class="card">
+        <div class="row-head">
+          <h2>Users</h2>
+          <span id="user-count" class="meta"></span>
+        </div>
+        <div id="users" class="table"></div>
+      </div>
+
+      <div class="card">
+        <div class="row-head">
+          <h2>Invites</h2>
+          <button type="button" id="btn-create-invite">Create invite</button>
+        </div>
+        <p id="invite-flash" class="flash hidden"></p>
+        <div id="invites" class="table"></div>
+      </div>
+    </section>
+  </div>
+  <script src="/admin/app.js"></script>
+</body>
+</html>
