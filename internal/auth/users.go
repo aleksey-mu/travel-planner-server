@@ -92,6 +92,9 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("ensure schema: %w", err)
 	}
+	if err := ensureInvitesSchema(s.db); err != nil {
+		return err
+	}
 	return nil
 }
 

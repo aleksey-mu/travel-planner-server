@@ -38,6 +38,8 @@ func testAPIWithUsers(t *testing.T, allowRegister bool, cors []string, quota, ma
 		MaxUploadBytes:    maxUpload,
 		LogFormat:         "text",
 		LogLevel:          "error",
+		MaxUsers:          100,
+		InviteTTLDays:     7,
 	}
 	users, err := auth.OpenUserStore(dir)
 	if err != nil {
@@ -426,5 +428,219 @@ func TestOpenUserStoreCreatesDB(t *testing.T) {
 	defer s.Close()
 	if _, err := os.Stat(filepath.Join(dir, "server.db")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServerInfoAndInvites(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:           dir,
+		JWTSecret:         strings.Repeat("k", 32),
+		HTTPAddr:          ":0",
+		JWTTTLSeconds:     3600,
+		DefaultQuotaBytes: 1 << 30,
+		MaxUploadBytes:    1 << 20,
+		LogFormat:         "text",
+		LogLevel:          "error",
+		PublicBaseURL:     "https://sync.example.com",
+		ServerName:        "",
+		MaxUsers:          10,
+		InviteTTLDays:     7,
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	admin, err := users.Create(t.Context(), "admin@example.com", "secret123", "AdminNick", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := users.Create(t.Context(), "member@example.com", "secret123", "Member", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := users.Create(t.Context(), "other-admin@example.com", "secret123", "OtherAdmin", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.SetDisabled(t.Context(), admin.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/server/info", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("server info %d %s", rec.Code, rec.Body.String())
+	}
+	var info map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info["publicBaseUrl"] != "https://sync.example.com" {
+		t.Fatal(info)
+	}
+	if info["serverName"] != "sync.example.com" {
+		t.Fatalf("serverName fallback=%v", info["serverName"])
+	}
+	names, _ := info["adminDisplayNames"].([]any)
+	if len(names) != 1 || names[0] != "OtherAdmin" {
+		t.Fatalf("admins=%v", names)
+	}
+	if int(info["userCount"].(float64)) != 3 {
+		t.Fatalf("userCount=%v", info["userCount"])
+	}
+
+	// member cannot create invite
+	memTok, _, err := tokens.Issue(member.ID, member.Email, member.PasswordVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{"label":"x"}`))
+	req.Header.Set("Authorization", "Bearer "+memTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("member create want 403 got %d", rec.Code)
+	}
+
+	adminTok, _, err := tokens.Issue(admin.ID, admin.Email, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// disabled admin rejected
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("disabled admin want 401 got %d %s", rec.Code, rec.Body.String())
+	}
+
+	liveAdmin, err := users.GetByEmail(t.Context(), "other-admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveTok, _, err := tokens.Issue(liveAdmin.ID, liveAdmin.Email, liveAdmin.PasswordVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{"label":"friend"}`))
+	req.Header.Set("Authorization", "Bearer "+liveTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("create invite %d %s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		ID        string `json:"id"`
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expiresAt"`
+		InviteURL string `json:"inviteUrl"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Token == "" {
+		t.Fatal(created)
+	}
+	if !strings.Contains(created.InviteURL, "token=") {
+		t.Fatal(created.InviteURL)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("get invite %d %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control=%q", rec.Header().Get("Cache-Control"))
+	}
+	var inv map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+	if inv["expiresAt"] != created.ExpiresAt {
+		t.Fatalf("expiresAt mismatch %v vs %s", inv["expiresAt"], created.ExpiresAt)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/not-a-real-token", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("invalid want 404 got %d", rec.Code)
+	}
+
+	if err := users.ExpireInviteForTest(t.Context(), created.ID); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 410 {
+		t.Fatalf("expired want 410 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+liveTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var created2 struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &created2)
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/invites/"+created2.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+liveTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 204 {
+		t.Fatalf("revoke %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created2.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 410 {
+		t.Fatalf("revoked want 410 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+liveTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var created3 struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &created3)
+	if err := users.MarkInviteUsedForTest(t.Context(), created3.ID); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created3.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 410 {
+		t.Fatalf("used want 410 got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/invites", nil)
+	req.Header.Set("Authorization", "Bearer "+liveTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("list %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/invites", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("unauth admin want 401 got %d", rec.Code)
 	}
 }

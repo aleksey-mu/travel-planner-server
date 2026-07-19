@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -51,7 +52,8 @@ type Config struct {
 	SeedAdminPassword          string
 	SeedAdminDisplayName       string
 	ServerName                 string
-	MaxUsers                   int // 0 = unlimited user seats
+	PublicBaseURL              string // optional; must be https:// when set
+	MaxUsers                   int    // 0 = unlimited user seats
 	InviteTTLDays              int
 	PasswordResetTTLSeconds    int
 }
@@ -148,6 +150,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("PASSWORD_RESET_TTL_SECONDS must be positive")
 	}
 
+	publicBase, err := parsePublicBaseURL(os.Getenv("PUBLIC_BASE_URL"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		DataDir:                 dataDir,
 		JWTSecret:               secret,
@@ -163,10 +170,51 @@ func Load() (*Config, error) {
 		SeedAdminPassword:       os.Getenv("SEED_ADMIN_PASSWORD"),
 		SeedAdminDisplayName:    seedDisplay,
 		ServerName:              strings.TrimSpace(os.Getenv("SERVER_NAME")),
+		PublicBaseURL:           publicBase,
 		MaxUsers:                maxUsers,
 		InviteTTLDays:           inviteTTL,
 		PasswordResetTTLSeconds: resetTTL,
 	}, nil
+}
+
+// EffectiveServerName returns SERVER_NAME, or hostname from PUBLIC_BASE_URL, or "".
+func (c *Config) EffectiveServerName() string {
+	if name := strings.TrimSpace(c.ServerName); name != "" {
+		return name
+	}
+	if c.PublicBaseURL == "" {
+		return ""
+	}
+	u, err := url.Parse(c.PublicBaseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+func parsePublicBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("PUBLIC_BASE_URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return "", fmt.Errorf("PUBLIC_BASE_URL must be https:// when set")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("PUBLIC_BASE_URL must include a host")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("PUBLIC_BASE_URL must not include credentials")
+	}
+	// Normalize: no trailing slash
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
 }
 
 func validateJWTSecret(secret string) error {

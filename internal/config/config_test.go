@@ -16,6 +16,7 @@ func TestLoadQuotaAndUploadMB(t *testing.T) {
 	t.Setenv("SEED_ADMIN_EMAIL", "")
 	t.Setenv("SEED_ADMIN_PASSWORD", "")
 	t.Setenv("SERVER_NAME", "")
+	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("MAX_USERS", "")
 	t.Setenv("INVITE_TTL_DAYS", "")
 	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")
@@ -42,6 +43,9 @@ func TestLoadQuotaAndUploadMB(t *testing.T) {
 	if cfg.ServerName != "" {
 		t.Fatalf("ServerName=%q", cfg.ServerName)
 	}
+	if cfg.PublicBaseURL != "" {
+		t.Fatalf("PublicBaseURL=%q", cfg.PublicBaseURL)
+	}
 }
 
 func TestLoadMultiUserEnv(t *testing.T) {
@@ -55,6 +59,7 @@ func TestLoadMultiUserEnv(t *testing.T) {
 	t.Setenv("SEED_ADMIN_EMAIL", "")
 	t.Setenv("SEED_ADMIN_PASSWORD", "")
 	t.Setenv("SERVER_NAME", "Alex's NAS")
+	t.Setenv("PUBLIC_BASE_URL", "https://sync.example.com/")
 	t.Setenv("MAX_USERS", "50")
 	t.Setenv("INVITE_TTL_DAYS", "14")
 	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "7200")
@@ -65,6 +70,12 @@ func TestLoadMultiUserEnv(t *testing.T) {
 	}
 	if cfg.ServerName != "Alex's NAS" {
 		t.Fatalf("ServerName=%q", cfg.ServerName)
+	}
+	if cfg.PublicBaseURL != "https://sync.example.com" {
+		t.Fatalf("PublicBaseURL=%q", cfg.PublicBaseURL)
+	}
+	if cfg.EffectiveServerName() != "Alex's NAS" {
+		t.Fatalf("EffectiveServerName=%q", cfg.EffectiveServerName())
 	}
 	if cfg.MaxUsers != 50 {
 		t.Fatalf("MaxUsers=%d", cfg.MaxUsers)
@@ -88,6 +99,7 @@ func TestLoadMaxUsersUnlimited(t *testing.T) {
 	t.Setenv("SEED_ADMIN_EMAIL", "")
 	t.Setenv("SEED_ADMIN_PASSWORD", "")
 	t.Setenv("SERVER_NAME", "")
+	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("MAX_USERS", "0")
 	t.Setenv("INVITE_TTL_DAYS", "")
 	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")
@@ -98,6 +110,40 @@ func TestLoadMaxUsersUnlimited(t *testing.T) {
 	}
 	if cfg.MaxUsers != 0 {
 		t.Fatalf("MaxUsers=%d want 0 (unlimited)", cfg.MaxUsers)
+	}
+}
+
+func TestPublicBaseURLAndServerNameFallback(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", filepath.ToSlash(dir))
+	t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789")
+	t.Setenv("VAULT_QUOTA_MB", "")
+	t.Setenv("MAX_UPLOAD_MB", "")
+	t.Setenv("ALLOW_REGISTER", "")
+	t.Setenv("CORS_ORIGINS", "")
+	t.Setenv("SEED_ADMIN_EMAIL", "")
+	t.Setenv("SEED_ADMIN_PASSWORD", "")
+	t.Setenv("SERVER_NAME", "")
+	t.Setenv("PUBLIC_BASE_URL", "https://nas.home.example")
+	t.Setenv("MAX_USERS", "")
+	t.Setenv("INVITE_TTL_DAYS", "")
+	t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EffectiveServerName() != "nas.home.example" {
+		t.Fatalf("EffectiveServerName=%q", cfg.EffectiveServerName())
+	}
+
+	t.Setenv("PUBLIC_BASE_URL", "http://insecure.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected http PUBLIC_BASE_URL reject")
+	}
+	t.Setenv("PUBLIC_BASE_URL", "https://user:pass@nas.home.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected credentials in PUBLIC_BASE_URL reject")
 	}
 }
 
@@ -114,6 +160,7 @@ func TestLoadRejectsInvalidMultiUserEnv(t *testing.T) {
 		t.Setenv("SEED_ADMIN_EMAIL", "")
 		t.Setenv("SEED_ADMIN_PASSWORD", "")
 		t.Setenv("SERVER_NAME", "")
+		t.Setenv("PUBLIC_BASE_URL", "")
 		t.Setenv("MAX_USERS", "")
 		t.Setenv("INVITE_TTL_DAYS", "")
 		t.Setenv("PASSWORD_RESET_TTL_SECONDS", "")

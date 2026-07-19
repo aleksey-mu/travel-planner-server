@@ -148,3 +148,42 @@ func TestSeedAdminCreatesOnEmptyDB(t *testing.T) {
 		t.Fatal("seeded user must be admin")
 	}
 }
+
+func TestCreateInviteCLI(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:       dir,
+		InviteTTLDays: 7,
+		PublicBaseURL: "https://sync.example.com",
+	}
+	prev := loadCLIConfig
+	loadCLIConfig = func() *config.Config { return cfg }
+	t.Cleanup(func() { loadCLIConfig = prev })
+
+	store, err := auth.OpenUserStore(filepath.ToSlash(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.Create(context.Background(), "a@example.com", "password123", "Admin", true, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := runCreateInvite([]string{"--label", "friend", "--expires-days", "3"}); code != 0 {
+		t.Fatalf("create-invite exit=%d", code)
+	}
+	list, err := store.ListInvites(context.Background())
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list=%v err=%v", list, err)
+	}
+	if list[0].Label != "friend" {
+		t.Fatal(list[0].Label)
+	}
+	if code := runRevokeInvite([]string{"--id", list[0].ID}); code != 0 {
+		t.Fatalf("revoke exit=%d", code)
+	}
+	got, err := store.GetInviteByID(context.Background(), list[0].ID)
+	if err != nil || !got.RevokedAt.Valid {
+		t.Fatalf("revoked=%v err=%v", got, err)
+	}
+}

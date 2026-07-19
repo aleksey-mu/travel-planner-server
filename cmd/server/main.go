@@ -31,6 +31,10 @@ func main() {
 			os.Exit(runCreateUser(os.Args[2:]))
 		case "set-password":
 			os.Exit(runSetPassword(os.Args[2:]))
+		case "create-invite":
+			os.Exit(runCreateInvite(os.Args[2:]))
+		case "revoke-invite":
+			os.Exit(runRevokeInvite(os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheck())
 		case "help", "-h", "--help":
@@ -56,6 +60,8 @@ Usage:
   travelplan-server [serve]
   travelplan-server create-user --email EMAIL --password PASS --display-name NAME [--admin]
   travelplan-server set-password --email EMAIL --password PASS
+  travelplan-server create-invite [--expires-days N] [--label TEXT]
+  travelplan-server revoke-invite --id ID
   travelplan-server healthcheck
 
 `, version.Version)
@@ -263,6 +269,84 @@ func runSetPassword(args []string) int {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "set-password: %v\n", err)
+		return 1
+	}
+	fmt.Println("ok")
+	return 0
+}
+
+func runCreateInvite(args []string) int {
+	fs := flag.NewFlagSet("create-invite", flag.ContinueOnError)
+	expiresDays := fs.Int("expires-days", 0, "TTL in days (default INVITE_TTL_DAYS)")
+	label := fs.String("label", "", "optional label")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg := loadCLIConfig()
+	days := cfg.InviteTTLDays
+	if *expiresDays != 0 {
+		if *expiresDays < 0 {
+			fmt.Fprintln(os.Stderr, "--expires-days must be positive")
+			return 2
+		}
+		days = *expiresDays
+	}
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	adminID, err := users.FirstEnabledAdminID(context.Background())
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "no enabled admin to attribute invite")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-invite: %v\n", err)
+		return 1
+	}
+	created, err := users.CreateInvite(context.Background(), adminID, *label, days)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-invite: %v\n", err)
+		return 1
+	}
+	fmt.Printf("id=%s\n", created.Invite.ID)
+	fmt.Printf("token=%s\n", created.RawToken)
+	fmt.Printf("expiresAt=%s\n", created.Invite.ExpiresAt)
+	if cfg.PublicBaseURL != "" {
+		fmt.Printf("inviteUrl=%s/join?token=%s\n",
+			strings.TrimSuffix(cfg.PublicBaseURL, "/"), created.RawToken)
+	}
+	return 0
+}
+
+func runRevokeInvite(args []string) int {
+	fs := flag.NewFlagSet("revoke-invite", flag.ContinueOnError)
+	id := fs.String("id", "", "invite id")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(os.Stderr, "revoke-invite requires --id")
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	err = users.RevokeInvite(context.Background(), *id)
+	if errors.Is(err, auth.ErrInviteNotFound) {
+		fmt.Fprintln(os.Stderr, "invite not found")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "revoke-invite: %v\n", err)
 		return 1
 	}
 	fmt.Println("ok")

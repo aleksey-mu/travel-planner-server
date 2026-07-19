@@ -85,7 +85,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S4 — Invites (create / get / revoke) + trust payloads
+### S4 — Invites (create / get / revoke) + trust payloads ✅
 
 **Product:** §3.1, §3.6, §3.11  
 **Do:**
@@ -98,7 +98,7 @@ cmd/server/        # CLI extensions
 - Thin HTML optional stub OK; full page can wait.
 
 **Tests:** expired/revoked/invalid; serverName fallback to hostname; all enabled admin names.  
-**Accept:** create invite → GET valid; after expiry 4xx; `/server/info` lists admins.
+**Accept:** `go test ./internal/auth/... ./internal/httpapi/... ./internal/config/... ./cmd/server/...`
 
 ---
 

@@ -7,8 +7,8 @@ Instead of linking Google Drive / OneDrive / Dropbox, the app talks to this serv
 **Status (multi-user in progress)**
 
 - **Breaking / unreleased:** wipe `DATA_DIR` when upgrading builds — no DB or API compatibility.
-- Auth: email + password → JWT (no OAuth, no SMTP). Open register always disabled; use CLI/`create-user` (and later invites).
-- Multiple private vaults via CLI already; invite/admin UI is later steps — see `docs/plan-multi-user.md`.
+- Auth: email + password → JWT (no OAuth, no SMTP). Open register always disabled; use CLI/`create-user` or invites.
+- Invites: `create-invite` / admin API + `GET /server/info` / `GET /invites/{token}` trust payloads.
 - Quota API is the Phase 2 JSON shape (below), not `{usage,limit}`.
 
 ---
@@ -35,7 +35,8 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 | `SEED_ADMIN_DISPLAY_NAME` | Display name (default `Admin`) |
 | `CORS_ORIGINS` | Allowed **web app** origins (comma-separated). Needed when TravelPlan runs in a browser. Native apps ignore CORS. Example: `https://app.example.com` |
 | `SERVER_NAME` | Optional friendly host label |
-| `MAX_USERS` | Soft account cap (default `100`; `0` = unlimited). Enforced when multi-user create/invite ships |
+| `PUBLIC_BASE_URL` | Optional `https://…` origin used in invite links / trust payload |
+| `MAX_USERS` | Soft account cap (default `100`; `0` = unlimited) |
 | `VAULT_QUOTA_MB` | Default vault cap in MiB (`10240` ≈ 10 GiB). **`0` = unlimited** (disk still applies) |
 | `MAX_UPLOAD_MB` | Max size of a single attachment, in MiB (default `50`) |
 | `HTTP_PUBLISH_PORT` | Host port for Compose on a VPS (default `8080`). Unused when Coolify’s proxy fronts the container |
@@ -68,6 +69,9 @@ Create / reset users without seed:
 ```bash
 docker compose exec travelplan-server /travelplan-server create-user \
   --email you@example.com --password '…' --display-name You [--admin]
+
+docker compose exec travelplan-server /travelplan-server create-invite \
+  [--expires-days 7] [--label friend]
 
 docker compose exec travelplan-server /travelplan-server set-password \
   --email you@example.com --password '…'
@@ -130,7 +134,7 @@ docker compose up -d --build
 docker compose exec travelplan-server /travelplan-server set-password --email … --password …
 ```
 
-CLI in the image: `serve` | `create-user` | `set-password` | `healthcheck`
+CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `revoke-invite` | `healthcheck`
 
 ---
 

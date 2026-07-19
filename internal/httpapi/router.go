@@ -47,12 +47,21 @@ func (a *API) Handler() http.Handler {
 
 func (a *API) registerRoutes(mux *http.ServeMux) {
 	requireAuth := auth.Middleware(a.tokens, a.users)
+	requireAdmin := func(h http.Handler) http.Handler {
+		return requireAuth(auth.AdminMiddleware(a.users)(h))
+	}
 
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 	mux.HandleFunc("POST /api/v1/auth/register", a.handleRegister)
 	mux.HandleFunc("POST /api/v1/auth/login", a.handleLogin)
+	mux.HandleFunc("GET /api/v1/server/info", a.handleServerInfo)
+	mux.HandleFunc("GET /api/v1/invites/{token}", a.handleGetInvite)
 
 	mux.Handle("GET /api/v1/me", requireAuth(http.HandlerFunc(a.handleMe)))
+
+	mux.Handle("POST /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminCreateInvite)))
+	mux.Handle("GET /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminListInvites)))
+	mux.Handle("DELETE /api/v1/admin/invites/{id}", requireAdmin(http.HandlerFunc(a.handleAdminRevokeInvite)))
 
 	mux.Handle("POST /api/v1/sync/bootstrap", requireAuth(http.HandlerFunc(a.handleBootstrap)))
 	mux.Handle("GET /api/v1/sync/quota", requireAuth(http.HandlerFunc(a.handleQuota)))

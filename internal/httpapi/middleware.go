@@ -78,7 +78,7 @@ func LoggingMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 			}
 			log.Info("request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", redactSensitivePath(r.URL.Path),
 				"status", status,
 				"bytes", rec.bytes,
 				"duration_ms", time.Since(start).Milliseconds(),
@@ -86,6 +86,29 @@ func LoggingMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 			)
 		})
 	}
+}
+
+// redactSensitivePath strips secrets from URL paths before logging
+// (invite tokens, future password-reset tokens).
+func redactSensitivePath(path string) string {
+	for _, prefix := range []string{
+		"/api/v1/invites/",
+		"/api/v1/password-reset/",
+	} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(path, prefix)
+		if rest == "" {
+			return path
+		}
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) == 1 {
+			return prefix + "[redacted]"
+		}
+		return prefix + "[redacted]/" + parts[1]
+	}
+	return path
 }
 
 // CORSMiddleware handles CORS for configured origins.
