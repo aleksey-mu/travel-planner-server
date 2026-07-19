@@ -134,4 +134,4 @@ CLI in the image: `serve` | `create-user` | `set-password` | `healthcheck`
 | `LOG_FORMAT` / `LOG_LEVEL` | no | `json` / `info` | |
 | `SEED_ADMIN_*` | no | — | First-boot owner; remove password after |
 
-Design detail: [docs/plan-basic-sync.md](docs/plan-basic-sync.md).
+Design detail: [docs/plan-basic-sync.md](docs/plan-basic-sync.md) · Multi-user Phase 2: [docs/plan-multi-user.md](docs/plan-multi-user.md).
