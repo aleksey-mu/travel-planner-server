@@ -192,7 +192,7 @@ cmd/server/        # CLI extensions
 
 ## Client steps (TravelPlan)
 
-### C0 — Types + adapter for new API shapes
+### C0 — Types + adapter for new API shapes ✅
 
 **Do:** Extend self-host client: `/server/info`, invite get/accept, `/sync/quota` new shape, `/me` ack flags, recover, password-reset. Specs for parsing.  
 **Accept:** unit tests for DTO mapping (unlimited null limits, modes A–F).
