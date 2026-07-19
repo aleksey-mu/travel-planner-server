@@ -1,0 +1,6 @@
+tmpdata/
+*.exe
+*.db
+*.db-*
+.env
+.DS_Store

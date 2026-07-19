@@ -1,0 +1,10 @@
+.git
+.env
+tmpdata
+*.exe
+*.db
+*.db-*
+docs
+README.md
+**/*_test.go
+.DS_Store

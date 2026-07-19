@@ -1,0 +1,283 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/aleksey-mu/travel-planner-server/internal/auth"
+	"github.com/aleksey-mu/travel-planner-server/internal/config"
+	"github.com/aleksey-mu/travel-planner-server/internal/httpapi"
+	"github.com/aleksey-mu/travel-planner-server/internal/syncstore"
+	"github.com/aleksey-mu/travel-planner-server/internal/version"
+)
+
+func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "serve":
+			os.Exit(runServe(os.Args[2:]))
+		case "create-user":
+			os.Exit(runCreateUser(os.Args[2:]))
+		case "set-password":
+			os.Exit(runSetPassword(os.Args[2:]))
+		case "healthcheck":
+			os.Exit(runHealthcheck())
+		case "help", "-h", "--help":
+			printUsage()
+			os.Exit(0)
+		default:
+			// Default to serve if first arg looks like a flag
+			if strings.HasPrefix(os.Args[1], "-") {
+				os.Exit(runServe(os.Args[1:]))
+			}
+			fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
+			printUsage()
+			os.Exit(2)
+		}
+	}
+	os.Exit(runServe(nil))
+}
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `travelplan-server %s
+
+Usage:
+  travelplan-server [serve]
+  travelplan-server create-user --email EMAIL --password PASS [--display-name NAME]
+  travelplan-server set-password --email EMAIL --password PASS
+  travelplan-server healthcheck
+
+`, version.Version)
+}
+
+func setupLogger(cfg *config.Config) *slog.Logger {
+	level := slog.LevelInfo
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	}
+	opts := &slog.HandlerOptions{Level: level}
+	var handler slog.Handler
+	if cfg.LogFormat == "text" {
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	}
+	return slog.New(handler)
+}
+
+func loadConfigOrExit() *config.Config {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "DATA_DIR: %v\n", err)
+		os.Exit(1)
+	}
+	abs, err := filepath.Abs(cfg.DataDir)
+	if err == nil {
+		cfg.DataDir = abs
+	}
+	return cfg
+}
+
+func runServe(args []string) int {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	_ = fs.Parse(args)
+
+	cfg := loadConfigOrExit()
+	log := setupLogger(cfg)
+	slog.SetDefault(log)
+
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		log.Error("open user store", "err", err)
+		return 1
+	}
+	defer users.Close()
+
+	if err := seedAdmin(context.Background(), users, cfg, log); err != nil {
+		log.Error("seed admin", "err", err)
+		return 1
+	}
+
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	store := syncstore.New(cfg.DataDir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes)
+	api := httpapi.NewAPI(cfg, users, tokens, store, log)
+
+	srv := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           api.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	go func() {
+		log.Info("listening", "addr", cfg.HTTPAddr, "version", version.Version)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("server", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(ctx)
+	return 0
+}
+
+func seedAdmin(ctx context.Context, users *auth.UserStore, cfg *config.Config, log *slog.Logger) error {
+	email := strings.TrimSpace(cfg.SeedAdminEmail)
+	if email == "" {
+		return nil
+	}
+	if cfg.SeedAdminPassword == "" {
+		return fmt.Errorf("SEED_ADMIN_PASSWORD required when SEED_ADMIN_EMAIL is set")
+	}
+	_, err := users.GetByEmail(ctx, email)
+	if err == nil {
+		log.Info("seed admin already exists", "email", auth.NormalizeEmail(email))
+		if cfg.SeedAdminPassword != "" {
+			log.Warn("SEED_ADMIN_PASSWORD is still set; remove it from the container environment after first boot")
+		}
+		return nil
+	}
+	if !errors.Is(err, auth.ErrNotFound) {
+		return err
+	}
+	u, err := users.Create(ctx, email, cfg.SeedAdminPassword, cfg.SeedAdminDisplayName)
+	if errors.Is(err, auth.ErrOwnerExists) {
+		log.Warn("seed skipped: vault already has an owner (SEED_ADMIN_EMAIL does not match existing user)")
+		if cfg.SeedAdminPassword != "" {
+			log.Warn("SEED_ADMIN_PASSWORD is still set; remove it from the container environment")
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	log.Info("seeded admin user", "userId", u.ID, "email", u.Email)
+	log.Warn("remove SEED_ADMIN_PASSWORD from the environment after first boot")
+	return nil
+}
+
+func runCreateUser(args []string) int {
+	fs := flag.NewFlagSet("create-user", flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	password := fs.String("password", "", "user password")
+	displayName := fs.String("display-name", "", "display name")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" || *password == "" {
+		fmt.Fprintln(os.Stderr, "create-user requires --email and --password")
+		return 2
+	}
+	cfg := loadConfigOrExit()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	u, err := users.Create(context.Background(), *email, *password, *displayName)
+	if errors.Is(err, auth.ErrOwnerExists) {
+		fmt.Fprintln(os.Stderr, "vault already has an owner (Phase 1 single-owner)")
+		return 1
+	}
+	if errors.Is(err, auth.ErrConflict) {
+		fmt.Fprintln(os.Stderr, "email already registered")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-user: %v\n", err)
+		return 1
+	}
+	fmt.Println(u.ID)
+	return 0
+}
+
+func runSetPassword(args []string) int {
+	fs := flag.NewFlagSet("set-password", flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	password := fs.String("password", "", "new password")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" || *password == "" {
+		fmt.Fprintln(os.Stderr, "set-password requires --email and --password")
+		return 2
+	}
+	cfg := loadConfigOrExit()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	err = users.SetPassword(context.Background(), *email, *password)
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "user not found")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "set-password: %v\n", err)
+		return 1
+	}
+	fmt.Println("ok")
+	return 0
+}
+
+func runHealthcheck() int {
+	addr := os.Getenv("HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	host := "127.0.0.1"
+	port := "8080"
+	if strings.HasPrefix(addr, ":") {
+		port = strings.TrimPrefix(addr, ":")
+	} else if h, p, err := net.SplitHostPort(addr); err == nil {
+		if h != "" && h != "0.0.0.0" && h != "::" {
+			host = h
+		}
+		port = p
+	}
+	url := fmt.Sprintf("http://%s:%s/api/v1/health", host, port)
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck: status %d\n", resp.StatusCode)
+		return 1
+	}
+	return 0
+}
