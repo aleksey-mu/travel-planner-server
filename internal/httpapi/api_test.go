@@ -862,3 +862,143 @@ func TestAcceptInviteEmailTakenAndFull(t *testing.T) {
 		t.Fatalf("full want 403 got %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRecoverAndPasswordResetHTTP(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:                 dir,
+		JWTSecret:               strings.Repeat("k", 32),
+		JWTTTLSeconds:           3600,
+		DefaultQuotaBytes:       1 << 30,
+		MaxUploadBytes:          1 << 20,
+		LogFormat:               "text",
+		LogLevel:                "error",
+		MaxUsers:                100,
+		InviteTTLDays:           7,
+		PasswordResetTTLSeconds: 3600,
+		PublicBaseURL:           "https://sync.example.com",
+		ServerName:              "Lab",
+	}
+	users, err := auth.OpenUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	admin, err := users.Create(t.Context(), "admin@example.com", "secret123", "Admin", true, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTLSeconds)
+	h := httpapi.NewAPI(cfg, users, tokens, syncstore.New(dir, cfg.DefaultQuotaBytes, cfg.MaxUploadBytes),
+		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+	adminTok, _, _ := tokens.Issue(admin.ID, admin.Email, 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var inv struct{ Token string `json:"token"` }
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+
+	body := `{"email":"friend@example.com","password":"password123","displayName":"Friend"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var accept struct {
+		AccessToken   string   `json:"accessToken"`
+		RecoveryCodes []string `json:"recoveryCodes"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &accept)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req.Header.Set("Authorization", "Bearer "+accept.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+
+	recoverBody := `{"email":"friend@example.com","recoveryCode":"` + accept.RecoveryCodes[0] + `","password":"password456"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(recoverBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("recover %d %s", rec.Code, rec.Body.String())
+	}
+	var recoverResp struct {
+		AccessToken string `json:"accessToken"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &recoverResp)
+	if recoverResp.AccessToken == "" {
+		t.Fatal("no token")
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(recoverBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("reuse code want 401 got %d", rec.Code)
+	}
+
+	friend, err := users.GetByEmail(t.Context(), "friend@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/"+friend.ID+"/password-reset", nil)
+	req.Header.Set("Authorization", "Bearer "+adminTok)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("create reset %d %s", rec.Code, rec.Body.String())
+	}
+	var resetCreated struct {
+		Token    string `json:"token"`
+		ResetURL string `json:"resetUrl"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &resetCreated)
+	if resetCreated.Token == "" || !strings.Contains(resetCreated.ResetURL, "token=") {
+		t.Fatal(resetCreated)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/password-reset/"+resetCreated.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var trust map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &trust)
+	if trust["serverName"] != "Lab" {
+		t.Fatal(trust)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/password-reset/"+resetCreated.Token,
+		strings.NewReader(`{"password":"password789"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("complete reset %d %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/password-reset/"+resetCreated.Token,
+		strings.NewReader(`{"password":"password000"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 410 {
+		t.Fatalf("reuse reset want 410 got %d", rec.Code)
+	}
+
+	// login with new password
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+		strings.NewReader(`{"email":"friend@example.com","password":"password789"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+}

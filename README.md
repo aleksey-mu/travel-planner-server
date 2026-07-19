@@ -134,7 +134,7 @@ docker compose up -d --build
 docker compose exec travelplan-server /travelplan-server set-password --email … --password …
 ```
 
-CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `revoke-invite` | `healthcheck`
+CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `revoke-invite` | `create-reset-link` | `healthcheck`
 
 ---
 

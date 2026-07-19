@@ -102,6 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	if err := ensureRecoveryCodesSchema(s.db); err != nil {
 		return err
 	}
+	if err := ensurePasswordResetSchema(s.db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -231,7 +234,8 @@ func (s *UserStore) GetByID(ctx context.Context, id string) (*User, error) {
 	return s.scanOne(ctx, `SELECT `+userSelectCols+` FROM users WHERE id = ?`, id)
 }
 
-// SetPassword updates the password hash for an existing user (admin reset).
+// SetPassword updates the password hash for an existing user (admin/CLI reset).
+// Password bump and outstanding reset-token revocation run in one transaction.
 func (s *UserStore) SetPassword(ctx context.Context, email, password string) error {
 	email = NormalizeEmail(email)
 	if email == "" {
@@ -244,10 +248,36 @@ func (s *UserStore) SetPassword(ctx context.Context, email, password string) err
 	if err != nil {
 		return err
 	}
+
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("db conn: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		}
+	}()
+
+	var userID string
+	err = conn.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ?`, email).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lookup user: %w", err)
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE users SET password_hash = ?, password_version = password_version + 1, updated_at = ? WHERE email = ?`,
-		hash, now, email,
+	res, err := conn.ExecContext(ctx,
+		`UPDATE users SET password_hash = ?, password_version = password_version + 1, updated_at = ? WHERE id = ?`,
+		hash, now, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("update password: %w", err)
@@ -259,6 +289,16 @@ func (s *UserStore) SetPassword(ctx context.Context, email, password string) err
 	if n == 0 {
 		return ErrNotFound
 	}
+	if _, err := conn.ExecContext(ctx,
+		`UPDATE password_reset_tokens SET revoked_at = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`,
+		now, userID,
+	); err != nil {
+		return fmt.Errorf("revoke reset tokens: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	committed = true
 	return nil
 }
 

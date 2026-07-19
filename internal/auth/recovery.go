@@ -17,7 +17,7 @@ import (
 const (
 	RecoveryCodeCount      = 10
 	recoveryCodeChars      = 16 // ~80 bits with 32-symbol alphabet
-	recoveryBcryptCost     = 10
+	recoveryBcryptCost     = 4 // codes are ~80-bit; cost 4 keeps accept/recover interactive
 	recoveryAlphabet       = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no I/O/0/1
 )
 
@@ -84,9 +84,40 @@ func HashRecoveryCode(code string) (string, error) {
 	return string(b), nil
 }
 
+// DummyRecoveryCodeHash equalizes recover timing when the account or code is missing.
+var DummyRecoveryCodeHash = mustHashRecovery("timing-equalization-dummy-recovery-code")
+
+func mustHashRecovery(code string) string {
+	h, err := HashRecoveryCode(code)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
 // CheckRecoveryCode compares a bcrypt hash with a plaintext recovery code.
 func CheckRecoveryCode(hash, code string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) == nil
+}
+
+// padRecoverCompares always runs RecoveryCodeCount bcrypt compares for timing.
+// Returns the first real matching code id (empty if none).
+func padRecoverCompares(normCode string, ids []string, hashes []string) string {
+	for len(hashes) < RecoveryCodeCount {
+		hashes = append(hashes, DummyRecoveryCodeHash)
+		ids = append(ids, "")
+	}
+	if len(hashes) > RecoveryCodeCount {
+		hashes = hashes[:RecoveryCodeCount]
+		ids = ids[:RecoveryCodeCount]
+	}
+	var matchedID string
+	for i := 0; i < RecoveryCodeCount; i++ {
+		if CheckRecoveryCode(hashes[i], normCode) && ids[i] != "" && matchedID == "" {
+			matchedID = ids[i]
+		}
+	}
+	return matchedID
 }
 
 func generateRecoveryCodes(n int) ([]string, error) {

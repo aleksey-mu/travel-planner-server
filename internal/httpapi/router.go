@@ -69,9 +69,12 @@ func (a *API) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 	mux.HandleFunc("POST /api/v1/auth/register", a.handleRegister)
 	mux.HandleFunc("POST /api/v1/auth/login", a.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/recover", a.handleRecover)
 	mux.HandleFunc("GET /api/v1/server/info", a.handleServerInfo)
 	mux.HandleFunc("GET /api/v1/invites/{token}", a.handleGetInvite)
 	mux.HandleFunc("POST /api/v1/invites/{token}/accept", a.handleAcceptInvite)
+	mux.HandleFunc("GET /api/v1/password-reset/{token}", a.handleGetPasswordReset)
+	mux.HandleFunc("POST /api/v1/password-reset/{token}", a.handleCompletePasswordReset)
 
 	mux.Handle("GET /api/v1/me", requireAuth(http.HandlerFunc(a.handleMe)))
 	mux.Handle("POST /api/v1/me/recovery-codes", requireAuth(http.HandlerFunc(a.handleRegenerateRecoveryCodes)))
@@ -80,6 +83,7 @@ func (a *API) registerRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminCreateInvite)))
 	mux.Handle("GET /api/v1/admin/invites", requireAdmin(http.HandlerFunc(a.handleAdminListInvites)))
 	mux.Handle("DELETE /api/v1/admin/invites/{id}", requireAdmin(http.HandlerFunc(a.handleAdminRevokeInvite)))
+	mux.Handle("POST /api/v1/admin/users/{id}/password-reset", requireAdmin(http.HandlerFunc(a.handleAdminCreatePasswordReset)))
 
 	mux.Handle("POST /api/v1/sync/bootstrap", requireSync(a.handleBootstrap))
 	mux.Handle("GET /api/v1/sync/quota", requireSync(a.handleQuota))

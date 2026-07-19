@@ -35,6 +35,8 @@ func main() {
 			os.Exit(runCreateInvite(os.Args[2:]))
 		case "revoke-invite":
 			os.Exit(runRevokeInvite(os.Args[2:]))
+		case "create-reset-link":
+			os.Exit(runCreateResetLink(os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheck())
 		case "help", "-h", "--help":
@@ -62,6 +64,7 @@ Usage:
   travelplan-server set-password --email EMAIL --password PASS
   travelplan-server create-invite [--expires-days N] [--label TEXT]
   travelplan-server revoke-invite --id ID
+  travelplan-server create-reset-link --email EMAIL
   travelplan-server healthcheck
 
 `, version.Version)
@@ -350,6 +353,48 @@ func runRevokeInvite(args []string) int {
 		return 1
 	}
 	fmt.Println("ok")
+	return 0
+}
+
+func runCreateResetLink(args []string) int {
+	fs := flag.NewFlagSet("create-reset-link", flag.ContinueOnError)
+	email := fs.String("email", "", "user email")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *email == "" {
+		fmt.Fprintln(os.Stderr, "create-reset-link requires --email")
+		return 2
+	}
+	cfg := loadCLIConfig()
+	users, err := auth.OpenUserStore(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db: %v\n", err)
+		return 1
+	}
+	defer users.Close()
+
+	u, err := users.GetByEmail(context.Background(), *email)
+	if errors.Is(err, auth.ErrNotFound) {
+		fmt.Fprintln(os.Stderr, "user not found")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-reset-link: %v\n", err)
+		return 1
+	}
+	created, err := users.CreatePasswordResetToken(context.Background(), u.ID, cfg.PasswordResetTTLSeconds)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-reset-link: %v\n", err)
+		return 1
+	}
+	fmt.Printf("id=%s\n", created.Token.ID)
+	fmt.Printf("token=%s\n", created.RawToken)
+	fmt.Printf("expiresAt=%s\n", created.Token.ExpiresAt)
+	if cfg.PublicBaseURL != "" {
+		fmt.Printf("resetUrl=%s/reset-password?token=%s\n",
+			strings.TrimSuffix(cfg.PublicBaseURL, "/"), created.RawToken)
+	}
 	return 0
 }
 

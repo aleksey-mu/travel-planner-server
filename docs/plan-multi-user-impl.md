@@ -118,7 +118,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### S6 — Recover + admin reset links
+### S6 — Recover + admin reset links ✅
 
 **Product:** §3.2  
 **Do:**
@@ -129,7 +129,7 @@ cmd/server/        # CLI extensions
 - TTL 1h.
 
 **Tests:** recover once; reuse fail; reset once; expired; set-password revokes tokens.  
-**Accept:** recover + reset link both yield usable JWT.
+**Accept:** `go test ./internal/auth/... ./internal/httpapi/... ./internal/config/... ./cmd/server/...`
 
 ---
 
