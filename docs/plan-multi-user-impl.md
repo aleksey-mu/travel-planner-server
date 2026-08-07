@@ -199,7 +199,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### C1 — `/join` wizard
+### C1 — `/join` wizard ✅
 
 **Product:** §3.1  
 **Do:** 3 steps; trust; expiry; full; accept→codes→ack; mid-join force on login; HTTPS block; native query prefill.  
@@ -208,7 +208,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### C2 — Forgot password + `/reset-password`
+### C2 — Forgot password + `/reset-password` ✅
 
 **Product:** §3.2  
 **Do:** Cold **server URL** + recover; ask-admin copy; reset-password route + deep link.  
@@ -216,7 +216,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### C3 — Settings (quota A–F, trust, codes, delete, Open admin)
+### C3 — Settings (quota A–F, trust, codes, delete, Open admin) ✅
 
 **Product:** §3.4, §3.7, §3.9  
 **Do:** Quota from `/sync/quota`; ask-admin hint; trust serverName+admins; regenerate+ack; delete account rules; Open admin deep-link.  
@@ -224,7 +224,7 @@ cmd/server/        # CLI extensions
 
 ---
 
-### C4 — i18n + capability matrix + people list
+### C4 — i18n + capability matrix + people list ✅
 
 **Do:** All locale keys; `GET /users` nicknames UI; update capability-matrix / feature-ideas.  
 **Accept:** `translation-files.spec.ts`; matrix cells for selfhost multi-user.

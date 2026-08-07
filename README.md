@@ -71,13 +71,17 @@ docker compose up -d --build
 
 ### Option B — Coolify
 
-1. New resource → **Docker Compose** (preferred) or Dockerfile, pointing at this repo.
-2. Apply the same environment variables from step 1 in Coolify (set `TRUST_PROXY=true`).
-3. Keep a **persistent volume** on `/data` (Compose already defines `travelplan-data:/data`). Do not wipe it on redeploy.
-4. Attach your domain with Coolify’s HTTPS proxy. Health path: `/api/v1/health`.
-5. After first login, clear `SEED_ADMIN_PASSWORD` in Coolify and redeploy.
+**Full walkthrough:** [docs/coolify.md](docs/coolify.md)
 
-If you deploy Dockerfile-only (no Compose), set `DATA_DIR=/data`, `HTTP_ADDR=:8080`, mount a volume at `/data`, expose port `8080`. Entrypoint requires `DATA_DIR` to be `/data` or a path under `/data`.
+1. New resource → **Docker Compose** → this repo, `docker-compose.yml`.
+2. Domain → container port **8080**; enable HTTPS. Health path: `/api/v1/health`.
+3. Set env in Coolify UI (compose interpolates `${VAR}` — no `env_file` needed):
+   - **Required:** `JWT_SECRET`, `TRUST_PROXY=true`
+   - **Recommended:** `PUBLIC_BASE_URL=https://your.host`, `SERVER_NAME`, `SEED_ADMIN_*`, `CORS_ORIGINS`
+4. Persistent volume `travelplan-data` → `/data` is already in compose — do not wipe on redeploy.
+5. After first login, clear `SEED_ADMIN_PASSWORD` and redeploy.
+
+Dockerfile-only is supported; see [docs/coolify.md](docs/coolify.md#dockerfile-only-alternative).
 
 ---
 
