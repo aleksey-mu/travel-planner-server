@@ -16,8 +16,8 @@ Step-by-step for a **Docker Compose** resource from this repo. The compose file 
 ## 2. Domain & port
 
 1. **Configuration → Domains** → add your public hostname, e.g. `travelplan.example.com`.
-2. Map domain → container port **8080** (HTTP).
-3. Enable Coolify HTTPS (Let’s Encrypt).
+2. Map domain → container port **8080** (HTTP). Enable Coolify HTTPS (Let’s Encrypt).
+3. If deploy fails with **port 8080 already allocated**, set `HTTP_PUBLISH_PORT` to a free host port (e.g. `18080`) in Environment Variables — container still listens on **8080**; only the host binding changes.
 
 ---
 
@@ -47,6 +47,7 @@ Open **Environment Variables** and set at least:
 | Variable | Suggested |
 |----------|-----------|
 | `CORS_ORIGINS` | Your web app origin(s), comma-separated — e.g. `https://app.example.com` (native apps ignore CORS) |
+| `HTTP_PUBLISH_PORT` | `8080` (default). Use another free port if host `8080` is taken (e.g. `18080`) |
 | `MAX_USERS` | `100` (default) |
 | `VAULT_QUOTA_MB` | `10240` (10 GiB per vault; `0` = unlimited) |
 
@@ -94,6 +95,7 @@ Share the invite URL. Friend opens TravelPlan `/join` or `https://YOUR_HOST/join
 
 | Symptom | Fix |
 |---------|-----|
+| `Bind for 0.0.0.0:8080 failed: port is already allocated` | Set `HTTP_PUBLISH_PORT` to a free port (e.g. `18080`); domain still maps to container port **8080** |
 | Container exits immediately | Check logs — usually missing/weak `JWT_SECRET` or `DATA_DIR` not `/data` |
 | 429 on login from your IP | `TRUST_PROXY=true`; Coolify must forward `X-Forwarded-For` |
 | Invite links missing host | Set `PUBLIC_BASE_URL` to your `https://` domain |
