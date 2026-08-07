@@ -96,6 +96,7 @@ Share the invite URL. Friend opens TravelPlan `/join` or `https://YOUR_HOST/join
 | Symptom | Fix |
 |---------|-----|
 | `Bind for 0.0.0.0:8080 failed: port is already allocated` | Set `HTTP_PUBLISH_PORT` to a free port (e.g. `18080`); domain still maps to container port **8080** |
+| Docker build fails on `apk add su-exec` | Fixed in repo — uses `shadow` + `su` (main Alpine repo only) |
 | Container exits immediately | Check logs — usually missing/weak `JWT_SECRET` or `DATA_DIR` not `/data` |
 | 429 on login from your IP | `TRUST_PROXY=true`; Coolify must forward `X-Forwarded-For` |
 | Invite links missing host | Set `PUBLIC_BASE_URL` to your `https://` domain |

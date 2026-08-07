@@ -1,5 +1,27 @@
 # build
 FROM golang:1.26-alpine AS build
+# Coolify injects runtime env as build ARGs — declare in build stage too (unused at compile time).
+ARG COOLIFY_FQDN
+ARG JWT_SECRET
+ARG CORS_ORIGINS
+ARG ALLOW_REGISTER
+ARG JWT_TTL_SECONDS
+ARG SERVER_NAME
+ARG PUBLIC_BASE_URL
+ARG MAX_USERS
+ARG INVITE_TTL_DAYS
+ARG PASSWORD_RESET_TTL_SECONDS
+ARG AUTH_RATE_LIMIT_MAX
+ARG AUTH_RATE_LIMIT_WINDOW_SECONDS
+ARG TRUST_PROXY
+ARG VAULT_QUOTA_MB
+ARG MAX_UPLOAD_MB
+ARG LOG_FORMAT
+ARG LOG_LEVEL
+ARG SEED_ADMIN_EMAIL
+ARG SEED_ADMIN_PASSWORD
+ARG SEED_ADMIN_DISPLAY_NAME
+ARG HTTP_PUBLISH_PORT
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git
 COPY go.mod go.sum ./
@@ -12,7 +34,29 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 
 # run — alpine for HEALTHCHECK + create-user exec
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates su-exec \
+# Coolify injects runtime env as build ARGs — declare so injection does not break the file.
+ARG COOLIFY_FQDN
+ARG JWT_SECRET
+ARG CORS_ORIGINS
+ARG ALLOW_REGISTER
+ARG JWT_TTL_SECONDS
+ARG SERVER_NAME
+ARG PUBLIC_BASE_URL
+ARG MAX_USERS
+ARG INVITE_TTL_DAYS
+ARG PASSWORD_RESET_TTL_SECONDS
+ARG AUTH_RATE_LIMIT_MAX
+ARG AUTH_RATE_LIMIT_WINDOW_SECONDS
+ARG TRUST_PROXY
+ARG VAULT_QUOTA_MB
+ARG MAX_UPLOAD_MB
+ARG LOG_FORMAT
+ARG LOG_LEVEL
+ARG SEED_ADMIN_EMAIL
+ARG SEED_ADMIN_PASSWORD
+ARG SEED_ADMIN_DISPLAY_NAME
+ARG HTTP_PUBLISH_PORT
+RUN apk add --no-cache ca-certificates shadow \
   && adduser -D -u 65532 -H appuser
 COPY --from=build /out/travelplan-server /travelplan-server
 COPY docker-entrypoint.sh /docker-entrypoint.sh

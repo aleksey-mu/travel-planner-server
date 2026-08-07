@@ -30,4 +30,4 @@ case "$resolved" in
     ;;
 esac
 chown -R appuser:appuser "$resolved"
-exec su-exec appuser /travelplan-server "$@"
+exec su appuser -s /bin/sh -c 'exec /travelplan-server "$@"' -- "$@"
