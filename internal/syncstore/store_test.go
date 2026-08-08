@@ -67,6 +67,34 @@ func TestStoreManifestAndTravel(t *testing.T) {
 	}
 }
 
+func TestDeleteTravelCascadesAttachmentFiles(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir, 1024*1024, 1024*1024)
+	uid := "user-cascade"
+	if err := s.Bootstrap(uid); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutTravel(uid, "t1", []byte(`{"id":"t1","name":"Trip","items":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutFile(uid, "t1", "i1", "photo.jpg", []byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	filesDir := filepath.Join(dir, "users", uid, "files", "t1")
+	if _, err := os.Stat(filesDir); err != nil {
+		t.Fatalf("expected attachment dir: %v", err)
+	}
+	if err := s.DeleteTravel(uid, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filesDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected attachment tree removed, got %v", err)
+	}
+	if _, err := s.GetTravel(uid, "t1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want travel not found, got %v", err)
+	}
+}
+
 func TestStoreFilesDualPrefix(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir, 1024*1024, 1024*1024)

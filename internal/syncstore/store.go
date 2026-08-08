@@ -181,7 +181,7 @@ func (s *Store) PutTravel(userID, travelID string, body []byte) error {
 	return s.writeFileQuota(userID, p, body)
 }
 
-// DeleteTravel removes a travel document (idempotent).
+// DeleteTravel removes a travel document and its attachment tree (idempotent).
 func (s *Store) DeleteTravel(userID, travelID string) error {
 	if err := ValidateSegmentID(travelID); err != nil {
 		return err
@@ -192,10 +192,16 @@ func (s *Store) DeleteTravel(userID, travelID string) error {
 	}
 	p := filepath.Join(root, "travels", travelID+".json")
 	err = os.Remove(p)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	return err
+
+	// Cascade: drop orphaned attachment blobs under files/{travelID}/.
+	filesDir := filepath.Join(root, "files", travelID)
+	if removeErr := os.RemoveAll(filesDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		return removeErr
+	}
+	return nil
 }
 
 // GetUserData returns a user-data JSON file.
