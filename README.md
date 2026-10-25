@@ -50,16 +50,10 @@ Health check: `GET /api/v1/health` → `{"status":"ok","version":"…"}`.
 
 ### Option A — VPS + Docker Compose
 
-1. Clone this repo; copy `.env.example` to `.env` and set `JWT_SECRET` and `PUBLIC_BASE_URL`.
-2. Start (publishes `HTTP_PUBLISH_PORT`, default `8080`):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
-```
-
-3. Put TLS in front (Caddy, nginx, Traefik) and proxy the hostname to port `8080`.
-4. Verify: `curl -s https://YOUR_HOST/api/v1/health`
-5. After first owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and re-run the command.
+1. Clone this repo; put `JWT_SECRET` and `PUBLIC_BASE_URL` in `.env` (see `.env.example`).
+2. `docker compose up -d --build`. The container only `expose`s `8080`; put a TLS reverse proxy (Caddy, nginx, Traefik) in front and proxy your hostname to it.
+3. Verify: `curl -s https://YOUR_HOST/api/v1/health`
+4. After first owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and re-run `docker compose up -d`.
 
 ### Option B — Coolify
 
@@ -143,7 +137,7 @@ Or open **`https://YOUR_HOST/admin/`**, sign in as admin → **Create invite**. 
 ```bash
 docker compose ps
 docker compose logs -f travelplan
-docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+docker compose up -d --build
 docker compose exec travelplan /travelplan-server healthcheck
 docker compose exec travelplan /travelplan-server set-password --email … --password …
 docker compose exec travelplan /travelplan-server create-reset-link --email …
@@ -161,7 +155,7 @@ CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `
 
 ## Environment reference
 
-See the table in [step 1](#1-configure-environment). Optional extras honored by the binary: `DATA_DIR` (default `./data`), `HTTP_ADDR` (default `:8080`), `TRUST_PROXY` (default `false`), `HTTP_PUBLISH_PORT` (VPS compose host port).
+See the table in [step 1](#1-configure-environment). Optional extras honored by the binary: `DATA_DIR` (default `./data`), `HTTP_ADDR` (default `:8080`), `TRUST_PROXY` (default `false`).
 
 **Current product plan:** [docs/plan-multi-user.md](docs/plan-multi-user.md) · step build: [docs/plan-multi-user-impl.md](docs/plan-multi-user-impl.md).  
 Historical Phase 1 notes (superseded for quota/tenancy): [docs/plan-basic-sync.md](docs/plan-basic-sync.md).

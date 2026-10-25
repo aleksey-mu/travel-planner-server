@@ -1,9 +1,17 @@
-# Coolify: New resource -> Docker Compose. Set the domain on the `travelplan` service as
-# https://your.domain:8080 (the :8080 tells the proxy the container port; it is not part of the public URL).
-# Plain VPS: docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+# Coolify: New Resource -> Docker Compose -> this file. Set the service domain in Coolify
+# (Domains of the `travelplan` service), e.g. https://api.your.domain:8080 (:8080 = container port for the proxy).
+# TLS is terminated by the Coolify proxy.
+# Required env: JWT_SECRET (openssl rand -base64 48), PUBLIC_BASE_URL (https://api.your.domain, no port).
+#
+# Docs: https://coolify.io/docs/knowledge-base/docker/compose
+
 services:
   travelplan:
-    build: .
+    image: travelplan-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL (https://your.domain)}
@@ -17,7 +25,16 @@ services:
       TRUST_PROXY: "true"
     volumes:
       - travelplan-data:/data
-    restart: unless-stopped
+    # expose (not ports): only the Coolify proxy reaches the container, so clients cannot bypass TLS
+    # or spoof X-Forwarded-For (used for per-IP limits).
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "/travelplan-server", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 volumes:
   travelplan-data:
