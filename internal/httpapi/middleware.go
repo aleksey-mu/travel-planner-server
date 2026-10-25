@@ -111,9 +111,16 @@ func redactSensitivePath(path string) string {
 	return path
 }
 
-// CORSMiddleware handles CORS for configured origins.
+// nativeAppOrigins are the WebView origins of the Tauri app (Android/Windows, iOS/macOS).
+// Its requests are cross-origin fetches, so they are always allowed; auth is a bearer token, not cookies.
+var nativeAppOrigins = []string{"http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"}
+
+// CORSMiddleware handles CORS for the native app origins plus the configured web origins.
 func CORSMiddleware(origins []string) func(http.Handler) http.Handler {
-	allowed := make(map[string]struct{}, len(origins))
+	allowed := make(map[string]struct{}, len(origins)+len(nativeAppOrigins))
+	for _, o := range nativeAppOrigins {
+		allowed[o] = struct{}{}
+	}
 	for _, o := range origins {
 		allowed[o] = struct{}{}
 	}
@@ -125,7 +132,7 @@ func CORSMiddleware(origins []string) func(http.Handler) http.Handler {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Vary", "Origin")
 					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 					w.Header().Set("Access-Control-Max-Age", "86400")
 				}
 			}

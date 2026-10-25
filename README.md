@@ -34,7 +34,7 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 | `JWT_SECRET` | Signing key, ≥32 chars. Generate: `openssl rand -base64 48` (PowerShell: `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))`) |
 | `PUBLIC_BASE_URL` | `https://…` origin for invite + reset links. Your public domain, no port |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Creates the **first admin** on an empty DB. Remove the password after first login |
-| `CORS_ORIGINS` | Web app origin(s), comma-separated. Native apps ignore CORS |
+| `CORS_ORIGINS` | Extra web app origin(s), comma-separated. The native app origins are always allowed |
 | `SERVER_NAME` | Label shown on join / Settings / admin. Defaults to the `PUBLIC_BASE_URL` hostname |
 | `MAX_USERS` | Account cap (default `100`, `0` = unlimited; disabled users count) |
 | `VAULT_QUOTA_MB` | Default vault cap in MiB (default `10240`, `0` = unlimited; disk still applies) |

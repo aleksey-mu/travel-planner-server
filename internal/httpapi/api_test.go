@@ -390,6 +390,17 @@ func TestCORSPreflight(t *testing.T) {
 	}
 }
 
+func TestCORSNativeAppOriginAlwaysAllowed(t *testing.T) {
+	h := testAPI(t, false, nil, 1<<30, 1<<20)
+	req := httptest.NewRequest(http.MethodOptions, "/health", nil)
+	req.Header.Set("Origin", "http://tauri.localhost")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://tauri.localhost" {
+		t.Fatalf("ACAOrigin=%q", got)
+	}
+}
+
 func TestUserDataAllowlist(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
 	tok := login(t, h)
