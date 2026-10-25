@@ -11,13 +11,13 @@ Docker Compose resource built from this repo. `docker-compose.yml` uses Coolify'
 
 ## 2. Domain
 
-Open **Configuration → Services → travelplan** and set the domain (e.g. `https://travelplan.example.com`). The compose file declares `SERVICE_URL_TRAVELPLAN_8080`, so Coolify already knows the service listens on port **8080**; HTTPS is handled by its proxy. No `ports:` mapping is used, so there are no host-port conflicts.
+Open **Configuration → Services → travelplan** and set the domain (e.g. `https://travelplan.example.com`). The compose file declares `SERVICE_URL_TRAVELPLAN_8080: /`, which tells Coolify the service listens on port **8080**; HTTPS is handled by its proxy. If you type the domain yourself, include the port: `https://travelplan.example.com:8080` (Coolify warns "No internal port" otherwise; the port is not part of the public URL). No `ports:` mapping is used, so there are no host-port conflicts.
 
 From that domain Coolify fills in automatically:
 
 | Variable | Source |
 |----------|--------|
-| `PUBLIC_BASE_URL` | `SERVICE_URL_TRAVELPLAN` (your domain; must be `https://`) |
+| `PUBLIC_BASE_URL` | `SERVICE_URL_TRAVELPLAN_8080` (your domain; must be `https://`) |
 | `JWT_SECRET` | `SERVICE_PASSWORD_64_JWT` (generated once) |
 
 ## 3. Optional environment variables

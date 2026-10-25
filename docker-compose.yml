@@ -1,22 +1,23 @@
-# Coolify: New resource -> Docker Compose. Coolify reads the SERVICE_* magic variables below:
-#   SERVICE_URL_TRAVELPLAN_8080  -> assigns a domain to this service, proxied to container port 8080
-#   SERVICE_PASSWORD_64_JWT      -> generates a random JWT secret on first deploy
-# Plain VPS: use `docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build`.
+# Coolify: New resource -> Docker Compose. Magic variables (https://coolify.io/docs/knowledge-base/docker/compose):
+#   SERVICE_URL_TRAVELPLAN_8080  -> routes the service's domain to container port 8080 (value = URL path)
+#   SERVICE_PASSWORD_64_JWT      -> generated 64-char secret, stable across redeploys
+# In the Domains UI keep the port in the domain, e.g. https://api.example.com:8080
+# Plain VPS: docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
 services:
   travelplan:
     build: .
     environment:
-      - SERVICE_URL_TRAVELPLAN_8080
-      - JWT_SECRET=${SERVICE_PASSWORD_64_JWT}
-      - PUBLIC_BASE_URL=${SERVICE_URL_TRAVELPLAN}
-      - CORS_ORIGINS=${CORS_ORIGINS:-}
-      - SERVER_NAME=${SERVER_NAME:-}
-      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
-      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-}
-      - MAX_USERS=${MAX_USERS:-100}
-      - VAULT_QUOTA_MB=${VAULT_QUOTA_MB:-10240}
-      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-50}
-      - TRUST_PROXY=true
+      SERVICE_URL_TRAVELPLAN_8080: /
+      JWT_SECRET: ${SERVICE_PASSWORD_64_JWT}
+      PUBLIC_BASE_URL: ${SERVICE_URL_TRAVELPLAN_8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SERVER_NAME: ${SERVER_NAME:-}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      MAX_USERS: ${MAX_USERS:-100}
+      VAULT_QUOTA_MB: ${VAULT_QUOTA_MB:-10240}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      TRUST_PROXY: "true"
     volumes:
       - travelplan-data:/data
     restart: unless-stopped
