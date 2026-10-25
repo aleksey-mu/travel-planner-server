@@ -60,7 +60,7 @@ func testAPIWithUsers(t *testing.T, allowRegister bool, cors []string, quota, ma
 func login(t *testing.T, h http.Handler) string {
 	t.Helper()
 	body := `{"email":"you@example.com","password":"secret123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -78,7 +78,7 @@ func login(t *testing.T, h http.Handler) string {
 
 func TestHealth(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -95,7 +95,7 @@ func TestAuthFlow(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
 	tok := login(t, h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -103,14 +103,14 @@ func TestAuthFlow(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, req2)
 	if rec2.Code != 401 {
 		t.Fatalf("want 401 got %d", rec2.Code)
 	}
 
-	req3 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"a@b.c","password":"password1"}`))
+	req3 := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":"a@b.c","password":"password1"}`))
 	req3.Header.Set("Content-Type", "application/json")
 	rec3 := httptest.NewRecorder()
 	h.ServeHTTP(rec3, req3)
@@ -129,7 +129,7 @@ func TestPasswordBumpInvalidatesToken(t *testing.T) {
 	if err := users.BumpPasswordVersion(t.Context(), u.ID); err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -137,7 +137,7 @@ func TestPasswordBumpInvalidatesToken(t *testing.T) {
 		t.Fatalf("want 401 after pwd bump got %d", rec.Code)
 	}
 	tok2 := login(t, h)
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
 	req2.Header.Set("Authorization", "Bearer "+tok2)
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, req2)
@@ -156,7 +156,7 @@ func TestDisabledUserRejectedOnSyncAndLogin(t *testing.T) {
 	if err := users.SetDisabled(t.Context(), u.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req := httptest.NewRequest(http.MethodGet, "/sync/quota", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -164,7 +164,7 @@ func TestDisabledUserRejectedOnSyncAndLogin(t *testing.T) {
 		t.Fatalf("disabled sync want 401 got %d", rec.Code)
 	}
 	body := `{"email":"you@example.com","password":"secret123"}`
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req2 := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, req2)
@@ -183,7 +183,7 @@ func TestSyncQuotaShape(t *testing.T) {
 
 	getQuota := func() map[string]any {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+		req := httptest.NewRequest(http.MethodGet, "/sync/quota", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -233,7 +233,7 @@ func TestSyncQuotaShape(t *testing.T) {
 func TestRegisterAlwaysDisabled(t *testing.T) {
 	h := testAPI(t, true, nil, 1<<30, 1<<20)
 	body := `{"email":"other@example.com","password":"password1","displayName":"Other"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -261,18 +261,18 @@ func TestSyncHappyPath(t *testing.T) {
 		return rec
 	}
 
-	if rec := do(http.MethodPost, "/api/v1/sync/bootstrap", nil, ""); rec.Code != 200 {
+	if rec := do(http.MethodPost, "/sync/bootstrap", nil, ""); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(http.MethodGet, "/api/v1/sync/manifest", nil, ""); rec.Code != 200 {
+	if rec := do(http.MethodGet, "/sync/manifest", nil, ""); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	man := `{"schemaVersion":1,"updatedAt":"2026-07-19T12:00:00Z","travels":[]}`
-	if rec := do(http.MethodPut, "/api/v1/sync/manifest", strings.NewReader(man), "application/json"); rec.Code != 204 {
+	if rec := do(http.MethodPut, "/sync/manifest", strings.NewReader(man), "application/json"); rec.Code != 204 {
 		t.Fatalf("put manifest %d %s", rec.Code, rec.Body.String())
 	}
 	travel := `{"id":"t1","name":"Trip","items":[]}`
-	rec := do(http.MethodPut, "/api/v1/sync/travels/t1", strings.NewReader(travel), "application/json")
+	rec := do(http.MethodPut, "/sync/travels/t1", strings.NewReader(travel), "application/json")
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
@@ -282,10 +282,10 @@ func TestSyncHappyPath(t *testing.T) {
 		t.Fatal(putResp)
 	}
 
-	if rec := do(http.MethodPost, "/api/v1/sync/files/t1/i1/ensure-folder", nil, ""); rec.Code != 200 {
+	if rec := do(http.MethodPost, "/sync/files/t1/i1/ensure-folder", nil, ""); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	rec = do(http.MethodPut, "/api/v1/sync/files/t1/i1/photo.jpg", bytes.NewReader([]byte("img")), "application/octet-stream")
+	rec = do(http.MethodPut, "/sync/files/t1/i1/photo.jpg", bytes.NewReader([]byte("img")), "application/octet-stream")
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
@@ -296,22 +296,22 @@ func TestSyncHappyPath(t *testing.T) {
 	}
 
 	// double files/ prefix (client behavior)
-	rec = do(http.MethodGet, "/api/v1/sync/files/files/t1/i1/photo.jpg", nil, "")
+	rec = do(http.MethodGet, "/sync/files/files/t1/i1/photo.jpg", nil, "")
 	if rec.Code != 200 || rec.Body.String() != "img" {
 		t.Fatalf("double prefix get %d %q", rec.Code, rec.Body.String())
 	}
-	rec = do(http.MethodGet, "/api/v1/sync/files/t1/i1/photo.jpg", nil, "")
+	rec = do(http.MethodGet, "/sync/files/t1/i1/photo.jpg", nil, "")
 	if rec.Code != 200 || rec.Body.String() != "img" {
 		t.Fatalf("bare get %d %q", rec.Code, rec.Body.String())
 	}
 
-	if rec := do(http.MethodDelete, "/api/v1/sync/files/files/t1/i1/photo.jpg", nil, ""); rec.Code != 204 {
+	if rec := do(http.MethodDelete, "/sync/files/files/t1/i1/photo.jpg", nil, ""); rec.Code != 204 {
 		t.Fatal(rec.Code)
 	}
-	if rec := do(http.MethodDelete, "/api/v1/sync/travels/t1", nil, ""); rec.Code != 204 {
+	if rec := do(http.MethodDelete, "/sync/travels/t1", nil, ""); rec.Code != 204 {
 		t.Fatal(rec.Code)
 	}
-	if rec := do(http.MethodDelete, "/api/v1/sync/travels/t1", nil, ""); rec.Code != 204 {
+	if rec := do(http.MethodDelete, "/sync/travels/t1", nil, ""); rec.Code != 204 {
 		t.Fatal("idempotent delete", rec.Code)
 	}
 }
@@ -320,7 +320,7 @@ func TestPathTraversalRejected(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
 	tok := login(t, h)
 	// Encoded ".." so ServeMux does not redirect before the handler.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/files/%2e%2e/%2e%2e/etc/passwd", nil)
+	req := httptest.NewRequest(http.MethodGet, "/sync/files/%2e%2e/%2e%2e/etc/passwd", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -331,7 +331,7 @@ func TestPathTraversalRejected(t *testing.T) {
 
 func TestSyncUnauthorized(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/manifest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/sync/manifest", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 401 {
@@ -344,12 +344,12 @@ func TestQuotaAndPayload413(t *testing.T) {
 	tok := login(t, h)
 	authz := "Bearer " + tok
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/bootstrap", nil)
+	req := httptest.NewRequest(http.MethodPost, "/sync/bootstrap", nil)
 	req.Header.Set("Authorization", authz)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/sync/files/t1/i1/big.bin", bytes.NewReader([]byte("123456")))
+	req = httptest.NewRequest(http.MethodPut, "/sync/files/t1/i1/big.bin", bytes.NewReader([]byte("123456")))
 	req.Header.Set("Authorization", authz)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	rec = httptest.NewRecorder()
@@ -358,14 +358,14 @@ func TestQuotaAndPayload413(t *testing.T) {
 		t.Fatalf("want 413 payload got %d %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/sync/files/t1/i1/a.bin", bytes.NewReader([]byte("12345")))
+	req = httptest.NewRequest(http.MethodPut, "/sync/files/t1/i1/a.bin", bytes.NewReader([]byte("12345")))
 	req.Header.Set("Authorization", authz)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("first put %d %s", rec.Code, rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/sync/files/t1/i1/b.bin", bytes.NewReader([]byte("12345")))
+	req = httptest.NewRequest(http.MethodPut, "/sync/files/t1/i1/b.bin", bytes.NewReader([]byte("12345")))
 	req.Header.Set("Authorization", authz)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -376,7 +376,7 @@ func TestQuotaAndPayload413(t *testing.T) {
 
 func TestCORSPreflight(t *testing.T) {
 	h := testAPI(t, false, []string{"http://localhost:4200"}, 1<<30, 1<<20)
-	req := httptest.NewRequest(http.MethodOptions, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/me", nil)
 	req.Header.Set("Origin", "http://localhost:4200")
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	req.Header.Set("Access-Control-Request-Headers", "Authorization")
@@ -393,7 +393,7 @@ func TestCORSPreflight(t *testing.T) {
 func TestUserDataAllowlist(t *testing.T) {
 	h := testAPI(t, false, nil, 1<<30, 1<<20)
 	tok := login(t, h)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/sync/user-data/item-types.json", strings.NewReader(`{"types":[]}`))
+	req := httptest.NewRequest(http.MethodPut, "/sync/user-data/item-types.json", strings.NewReader(`{"types":[]}`))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -401,7 +401,7 @@ func TestUserDataAllowlist(t *testing.T) {
 	if rec.Code != 204 {
 		t.Fatal(rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/sync/user-data/evil.json", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPut, "/sync/user-data/evil.json", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -470,7 +470,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/server/info", nil)
+	req := httptest.NewRequest(http.MethodGet, "/server/info", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -499,7 +499,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{"label":"x"}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{"label":"x"}`))
 	req.Header.Set("Authorization", "Bearer "+memTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -513,7 +513,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 		t.Fatal(err)
 	}
 	// disabled admin rejected
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -530,7 +530,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{"label":"friend"}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{"label":"friend"}`))
 	req.Header.Set("Authorization", "Bearer "+liveTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -551,7 +551,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 		t.Fatal(created.InviteURL)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created.Token, nil)
+	req = httptest.NewRequest(http.MethodGet, "/invites/"+created.Token, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -566,7 +566,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 		t.Fatalf("expiresAt mismatch %v vs %s", inv["expiresAt"], created.ExpiresAt)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/not-a-real-token", nil)
+	req = httptest.NewRequest(http.MethodGet, "/invites/not-a-real-token", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 404 {
@@ -576,14 +576,14 @@ func TestServerInfoAndInvites(t *testing.T) {
 	if err := users.ExpireInviteForTest(t.Context(), created.ID); err != nil {
 		t.Fatal(err)
 	}
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created.Token, nil)
+	req = httptest.NewRequest(http.MethodGet, "/invites/"+created.Token, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 410 {
 		t.Fatalf("expired want 410 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+liveTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -594,21 +594,21 @@ func TestServerInfoAndInvites(t *testing.T) {
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &created2)
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/invites/"+created2.ID, nil)
+	req = httptest.NewRequest(http.MethodDelete, "/admin/invites/"+created2.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+liveTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 204 {
 		t.Fatalf("revoke %d", rec.Code)
 	}
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created2.Token, nil)
+	req = httptest.NewRequest(http.MethodGet, "/invites/"+created2.Token, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 410 {
 		t.Fatalf("revoked want 410 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+liveTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -621,14 +621,14 @@ func TestServerInfoAndInvites(t *testing.T) {
 	if err := users.MarkInviteUsedForTest(t.Context(), created3.ID); err != nil {
 		t.Fatal(err)
 	}
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+created3.Token, nil)
+	req = httptest.NewRequest(http.MethodGet, "/invites/"+created3.Token, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 410 {
 		t.Fatalf("used want 410 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/invites", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/invites", nil)
 	req.Header.Set("Authorization", "Bearer "+liveTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -636,7 +636,7 @@ func TestServerInfoAndInvites(t *testing.T) {
 		t.Fatalf("list %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/invites", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/invites", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 401 {
@@ -674,7 +674,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -688,7 +688,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
 
 	body := `{"email":"friend@example.com","password":"password123","displayName":"Friend"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/invites/"+inv.Token+"/accept", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -709,7 +709,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 	}
 
 	// Sync blocked until ack
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req = httptest.NewRequest(http.MethodGet, "/sync/quota", nil)
 	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -717,7 +717,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 		t.Fatalf("sync before ack want 403 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/invites/"+inv.Token+"/accept", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -725,7 +725,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 		t.Fatalf("reuse want 410 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req = httptest.NewRequest(http.MethodPost, "/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
 	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -734,7 +734,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 		t.Fatalf("ack %d %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/sync/quota", nil)
+	req = httptest.NewRequest(http.MethodGet, "/sync/quota", nil)
 	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -742,7 +742,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 		t.Fatalf("sync after ack %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(
 		`{"email":"friend@example.com","password":"password123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -759,7 +759,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 	}
 
 	// unacked regenerate path
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes", nil)
+	req = httptest.NewRequest(http.MethodPost, "/me/recovery-codes", nil)
 	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -777,7 +777,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 	}
 
 	// stale generation ack
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req = httptest.NewRequest(http.MethodPost, "/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
 	req.Header.Set("Authorization", "Bearer "+acceptResp.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -786,7 +786,7 @@ func TestAcceptInviteAckLoginFlow(t *testing.T) {
 		t.Fatalf("stale gen want 409 got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(
 		`{"email":"friend@example.com","password":"password123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -822,7 +822,7 @@ func TestAcceptInviteEmailTakenAndFull(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
 	adminTok, _, _ := tokens.Issue(admin.ID, admin.Email, 0)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -833,7 +833,7 @@ func TestAcceptInviteEmailTakenAndFull(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
 
 	body := `{"email":"admin@example.com","password":"password123","displayName":"X"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/invites/"+inv.Token+"/accept", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -842,14 +842,14 @@ func TestAcceptInviteEmailTakenAndFull(t *testing.T) {
 	}
 
 	cfg.MaxUsers = 1
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
 	body = `{"email":"new@example.com","password":"password123","displayName":"New"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/invites/"+inv.Token+"/accept", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -886,7 +886,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
 	adminTok, _, _ := tokens.Issue(admin.ID, admin.Email, 0)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -895,7 +895,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
 
 	body := `{"email":"friend@example.com","password":"password123","displayName":"Friend"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/invites/"+inv.Token+"/accept", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/invites/"+inv.Token+"/accept", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -904,7 +904,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 		RecoveryCodes []string `json:"recoveryCodes"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &accept)
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
+	req = httptest.NewRequest(http.MethodPost, "/me/recovery-codes/ack", strings.NewReader(`{"generation":1}`))
 	req.Header.Set("Authorization", "Bearer "+accept.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -914,7 +914,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	}
 
 	recoverBody := `{"email":"friend@example.com","recoveryCode":"` + accept.RecoveryCodes[0] + `","password":"password456"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(recoverBody))
+	req = httptest.NewRequest(http.MethodPost, "/auth/recover", strings.NewReader(recoverBody))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -928,7 +928,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	if recoverResp.AccessToken == "" {
 		t.Fatal("no token")
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(recoverBody))
+	req = httptest.NewRequest(http.MethodPost, "/auth/recover", strings.NewReader(recoverBody))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -940,7 +940,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/"+friend.ID+"/password-reset", nil)
+	req = httptest.NewRequest(http.MethodPost, "/admin/users/"+friend.ID+"/password-reset", nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -956,7 +956,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 		t.Fatal(resetCreated)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/password-reset/"+resetCreated.Token, nil)
+	req = httptest.NewRequest(http.MethodGet, "/password-reset/"+resetCreated.Token, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -968,7 +968,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 		t.Fatal(trust)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/password-reset/"+resetCreated.Token,
+	req = httptest.NewRequest(http.MethodPost, "/password-reset/"+resetCreated.Token,
 		strings.NewReader(`{"password":"password789"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -976,7 +976,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("complete reset %d %s", rec.Code, rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/password-reset/"+resetCreated.Token,
+	req = httptest.NewRequest(http.MethodPost, "/password-reset/"+resetCreated.Token,
 		strings.NewReader(`{"password":"password000"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -986,7 +986,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 	}
 
 	// login with new password
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+	req = httptest.NewRequest(http.MethodPost, "/auth/login",
 		strings.NewReader(`{"email":"friend@example.com","password":"password789"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -999,7 +999,7 @@ func TestRecoverAndPasswordResetHTTP(t *testing.T) {
 func loginEmail(t *testing.T, h http.Handler, email, password string) string {
 	t.Helper()
 	body := `{"email":"` + email + `","password":"` + password + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1037,7 +1037,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	adminTok := loginEmail(t, h, "admin@example.com", "secret123")
 
 	// refuse demote last enabled admin
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/"+admin.ID,
 		strings.NewReader(`{"isAdmin":false}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1048,7 +1048,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	}
 
 	// promote member, then demote self OK
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+member.ID,
 		strings.NewReader(`{"isAdmin":true}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1057,7 +1057,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("promote %d %s", rec.Code, rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+admin.ID,
 		strings.NewReader(`{"isAdmin":false}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1069,7 +1069,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 
 	// re-promote admin for later tests
 	memberTok := loginEmail(t, h, "member@example.com", "secret123")
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+admin.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+admin.ID,
 		strings.NewReader(`{"isAdmin":true}`))
 	req.Header.Set("Authorization", "Bearer "+memberTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1081,7 +1081,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	adminTok = loginEmail(t, h, "admin@example.com", "secret123")
 
 	// quotaMode personal
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+member.ID,
 		strings.NewReader(`{"quotaMode":"personal","quotaBytes":2048}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1097,7 +1097,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	}
 
 	// cannot delete self via admin API
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+admin.ID, nil)
+	req = httptest.NewRequest(http.MethodDelete, "/admin/users/"+admin.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1106,7 +1106,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	}
 
 	// sole admin with members: DELETE /me blocked
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+member.ID,
 		strings.NewReader(`{"isAdmin":false}`))
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	req.Header.Set("Content-Type", "application/json")
@@ -1115,7 +1115,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/me", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/me", nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1123,7 +1123,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 		t.Fatalf("DELETE /me sole want 409 got %d %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1131,7 +1131,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+member.ID, nil)
+	req = httptest.NewRequest(http.MethodDelete, "/admin/users/"+member.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1143,7 +1143,7 @@ func TestAdminUsersLastAdminAndQuotaAndDelete(t *testing.T) {
 		t.Fatalf("member should be gone: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req = httptest.NewRequest(http.MethodGet, "/users", nil)
 	req.Header.Set("Authorization", "Bearer "+adminTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1193,7 +1193,7 @@ func TestDeleteMePurgesVault(t *testing.T) {
 	h := httpapi.NewAPI(cfg, users, tokens, store, log).Handler()
 	tok := loginEmail(t, h, "alone@example.com", "secret123")
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/me", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1235,7 +1235,7 @@ func TestRecoverRateLimited(t *testing.T) {
 	body := `{"email":"you@example.com","recoveryCode":"AAAA-AAAA-AAAA","password":"password123"}`
 	do := func() *httptest.ResponseRecorder {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/recover", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/auth/recover", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "203.0.113.9:443"
 		rec := httptest.NewRecorder()
@@ -1291,7 +1291,7 @@ func TestLoginRateLimitByEmailAcrossIPs(t *testing.T) {
 
 	body := `{"email":"you@example.com","password":"wrong-password"}`
 	for i, ip := range []string{"203.0.113.1:1", "203.0.113.2:1"} {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = ip
 		rec := httptest.NewRecorder()
@@ -1300,7 +1300,7 @@ func TestLoginRateLimitByEmailAcrossIPs(t *testing.T) {
 			t.Fatalf("attempt %d from %s limited early", i+1, ip)
 		}
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "203.0.113.3:1"
 	rec := httptest.NewRecorder()
@@ -1339,7 +1339,7 @@ func TestTrustProxyUsesXForwardedFor(t *testing.T) {
 
 	body := `{"email":"a@example.com","password":"x"}`
 	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Forwarded-For", "198.51.100.7")
 		req.RemoteAddr = "10.0.0.1:80"
@@ -1349,7 +1349,7 @@ func TestTrustProxyUsesXForwardedFor(t *testing.T) {
 			t.Fatalf("early limit %d", i)
 		}
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"b@example.com","password":"x"}`))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"b@example.com","password":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Forwarded-For", "198.51.100.7")
 	req.RemoteAddr = "10.0.0.1:80"

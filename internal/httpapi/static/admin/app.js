@@ -64,7 +64,7 @@
 
   async function loadServerLabel() {
     try {
-      const info = await api("/api/v1/server/info");
+      const info = await api("/server/info");
       const name = info.serverName || "(unnamed server)";
       const cap = info.maxUsers === 0 ? "unlimited" : String(info.maxUsers);
       el("server-label").textContent = name + " · " + info.userCount + "/" + cap + " users";
@@ -80,9 +80,9 @@
       return false;
     }
     try {
-      const me = await api("/api/v1/me");
+      const me = await api("/me");
       meId = me.id;
-      await api("/api/v1/admin/users");
+      await api("/admin/users");
       showPanel();
       return true;
     } catch (e) {
@@ -98,8 +98,8 @@
   async function refresh() {
     el("panel-error").textContent = "";
     const [usersRes, invitesRes] = await Promise.all([
-      api("/api/v1/admin/users"),
-      api("/api/v1/admin/invites"),
+      api("/admin/users"),
+      api("/admin/invites"),
     ]);
     renderUsers(usersRes.users || []);
     renderInvites(invitesRes.invites || []);
@@ -182,7 +182,7 @@
             if (!mib || mib <= 0) throw new Error("personal requires MiB > 0");
             body.quotaBytes = Math.floor(mib * 1024 * 1024);
           }
-          await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+          await api("/admin/users/" + encodeURIComponent(u.id), {
             method: "PATCH",
             body: JSON.stringify(body),
           });
@@ -208,7 +208,7 @@
       if (!u.isAdmin) {
         addBtn("Promote", "", async () => {
           try {
-            await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+            await api("/admin/users/" + encodeURIComponent(u.id), {
               method: "PATCH",
               body: JSON.stringify({ isAdmin: true }),
             });
@@ -220,7 +220,7 @@
       } else if (canSelfAdminAction) {
         addBtn("Demote", "", async () => {
           try {
-            await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+            await api("/admin/users/" + encodeURIComponent(u.id), {
               method: "PATCH",
               body: JSON.stringify({ isAdmin: false }),
             });
@@ -240,7 +240,7 @@
       if (u.disabled) {
         addBtn("Enable", "", async () => {
           try {
-            await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+            await api("/admin/users/" + encodeURIComponent(u.id), {
               method: "PATCH",
               body: JSON.stringify({ disabled: false }),
             });
@@ -252,7 +252,7 @@
       } else if (canSelfAdminAction) {
         addBtn("Disable", "", async () => {
           try {
-            await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+            await api("/admin/users/" + encodeURIComponent(u.id), {
               method: "PATCH",
               body: JSON.stringify({ disabled: true }),
             });
@@ -271,7 +271,7 @@
       }
       addBtn("Reset link", "", async () => {
         try {
-          const res = await api("/api/v1/admin/users/" + encodeURIComponent(u.id) + "/password-reset", {
+          const res = await api("/admin/users/" + encodeURIComponent(u.id) + "/password-reset", {
             method: "POST",
           });
           const flash = el("invite-flash");
@@ -290,7 +290,7 @@
           const ok = confirm("Delete " + u.displayName + " (" + u.email + ") permanently?");
           if (!ok) return;
           try {
-            await api("/api/v1/admin/users/" + encodeURIComponent(u.id), { method: "DELETE" });
+            await api("/admin/users/" + encodeURIComponent(u.id), { method: "DELETE" });
             await refresh();
           } catch (e) {
             el("panel-error").textContent = e.message;
@@ -330,7 +330,7 @@
         b.textContent = "Revoke";
         b.onclick = async () => {
           try {
-            await api("/api/v1/admin/invites/" + encodeURIComponent(inv.id), { method: "DELETE" });
+            await api("/admin/invites/" + encodeURIComponent(inv.id), { method: "DELETE" });
             await refresh();
           } catch (e) {
             el("panel-error").textContent = e.message;
@@ -345,7 +345,7 @@
   el("btn-login").onclick = async () => {
     el("login-error").textContent = "";
     try {
-      const data = await api("/api/v1/auth/login", {
+      const data = await api("/auth/login", {
         method: "POST",
         body: JSON.stringify({
           email: el("login-email").value.trim(),
@@ -354,7 +354,7 @@
       });
       sessionStorage.setItem(TOKEN_KEY, data.accessToken);
       meId = data.user && data.user.id;
-      await api("/api/v1/admin/users");
+      await api("/admin/users");
       el("login-password").value = "";
       showPanel();
       await refresh();
@@ -376,7 +376,7 @@
 
   el("btn-create-invite").onclick = async () => {
     try {
-      const res = await api("/api/v1/admin/invites", {
+      const res = await api("/admin/invites", {
         method: "POST",
         body: JSON.stringify({}),
       });

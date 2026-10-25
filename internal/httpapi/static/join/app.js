@@ -63,7 +63,7 @@
       return;
     }
     try {
-      invite = await api("/api/v1/invites/" + encodeURIComponent(token));
+      invite = await api("/invites/" + encodeURIComponent(token));
       const name = invite.serverName || location.host;
       const admins = (invite.adminDisplayNames || []).join(", ") || "(no admins listed)";
       el("trust-summary").textContent = name + " — admins: " + admins;
@@ -98,7 +98,7 @@
     }
     const token = el("token").value.trim();
     try {
-      const res = await api("/api/v1/invites/" + encodeURIComponent(token) + "/accept", {
+      const res = await api("/invites/" + encodeURIComponent(token) + "/accept", {
         method: "POST",
         body: JSON.stringify({
           email: el("email").value.trim(),
@@ -128,7 +128,7 @@
   el("btn-ack").onclick = async () => {
     el("codes-error").textContent = "";
     try {
-      await api("/api/v1/me/recovery-codes/ack", {
+      await api("/me/recovery-codes/ack", {
         method: "POST",
         body: JSON.stringify({ generation: generation }),
       });

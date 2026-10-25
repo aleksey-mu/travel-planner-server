@@ -42,7 +42,7 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 
 Everything else is fixed: access tokens 1 h, invites 7 days, reset links 1 h, auth rate limit 20 attempts / 15 min, JSON logs. `TRUST_PROXY=true` is set in the compose file; `DATA_DIR` is `/data` in the image (`./data` when running the binary directly).
 
-Health check: `GET /api/v1/health` → `{"status":"ok","version":"…"}`.
+Health check: `GET /health` → `{"status":"ok","version":"…"}`.
 
 ---
 
@@ -52,7 +52,7 @@ Health check: `GET /api/v1/health` → `{"status":"ok","version":"…"}`.
 
 1. Clone this repo; put `JWT_SECRET` and `PUBLIC_BASE_URL` in `.env` (see `.env.example`).
 2. `docker compose up -d --build`. The container only `expose`s `8080`; put a TLS reverse proxy (Caddy, nginx, Traefik) in front and proxy your hostname to it.
-3. Verify: `curl -s https://YOUR_HOST/api/v1/health`
+3. Verify: `curl -s https://YOUR_HOST/health`
 4. After first owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and re-run `docker compose up -d`.
 
 ### Option B — Coolify
@@ -99,7 +99,7 @@ Or open **`https://YOUR_HOST/admin/`**, sign in as admin → **Create invite**. 
 ## 4. Connect TravelPlan
 
 1. In the app: **Self-hosted** (login or sync settings).
-2. Server URL = your public base, **no** `/api/v1` suffix — e.g. `https://travelplan.example.com`.
+2. Server URL = your public base — e.g. `https://travelplan.example.com`.
 3. Sign in with email/password.
 4. Test connection → save → sync.
 
@@ -114,7 +114,7 @@ Or open **`https://YOUR_HOST/admin/`**, sign in as admin → **Create invite**. 
 - Default vault cap: `VAULT_QUOTA_MB` (MiB). `0` = unlimited (free disk still applies).
 - Admins set per-user mode: server default, personal MiB, or unlimited.
 - Hard floor: free space on the volume that holds `DATA_DIR`.
-- `GET /api/v1/sync/quota` returns:
+- `GET /sync/quota` returns:
 
 ```json
 {

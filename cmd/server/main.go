@@ -586,7 +586,7 @@ func runHealthcheck() int {
 		}
 		port = p
 	}
-	url := fmt.Sprintf("http://%s:%s/api/v1/health", host, port)
+	url := fmt.Sprintf("http://%s:%s/health", host, port)
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {

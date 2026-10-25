@@ -13,11 +13,11 @@ func TestRedactSensitivePath(t *testing.T) {
 	tests := []struct {
 		in, want string
 	}{
-		{"/api/v1/health", "/api/v1/health"},
-		{"/api/v1/invites/secret-token", "/api/v1/invites/[redacted]"},
-		{"/api/v1/invites/secret-token/accept", "/api/v1/invites/[redacted]/accept"},
-		{"/api/v1/password-reset/secret", "/api/v1/password-reset/[redacted]"},
-		{"/api/v1/invites/", "/api/v1/invites/"},
+		{"/health", "/health"},
+		{"/invites/secret-token", "/invites/[redacted]"},
+		{"/invites/secret-token/accept", "/invites/[redacted]/accept"},
+		{"/password-reset/secret", "/password-reset/[redacted]"},
+		{"/invites/", "/invites/"},
 	}
 	for _, tc := range tests {
 		if got := redactSensitivePath(tc.in); got != tc.want {
@@ -33,14 +33,14 @@ func TestLoggingMiddlewareRedactsInviteToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	secret := "super-secret-invite-token-value"
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+secret, nil)
+	req := httptest.NewRequest(http.MethodGet, "/invites/"+secret, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	out := buf.String()
 	if strings.Contains(out, secret) {
 		t.Fatalf("log leaked token: %s", out)
 	}
-	if !strings.Contains(out, "/api/v1/invites/[redacted]") {
+	if !strings.Contains(out, "/invites/[redacted]") {
 		t.Fatalf("expected redacted path in log: %s", out)
 	}
 }

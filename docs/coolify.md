@@ -35,9 +35,9 @@ Volume `travelplan-data` → `/data` (SQLite + vaults). Do not wipe on redeploy 
 ## 5. Deploy and verify
 
 1. **Deploy**.
-2. `curl -s https://travelplan.example.com/api/v1/health`
+2. `curl -s https://travelplan.example.com/health`
 3. Admin panel: `https://travelplan.example.com/admin/`
-4. In the app: **Self-hosted** → server URL `https://travelplan.example.com` (no `/api/v1`).
+4. In the app: **Self-hosted** → server URL `https://travelplan.example.com`.
 
 Create an invite from the admin UI, or in the resource terminal: `/travelplan-server create-invite --label friend`.
 
@@ -55,4 +55,4 @@ Create an invite from the admin UI, or in the resource terminal: `/travelplan-se
 
 ## Dockerfile-only (alternative)
 
-New resource → **Dockerfile**, port **8080**, health path `/api/v1/health`, storage at `/data`. Set `JWT_SECRET`, `PUBLIC_BASE_URL` and `TRUST_PROXY=true`. Compose is preferred.
+New resource → **Dockerfile**, port **8080**, health path `/health`, storage at `/data`. Set `JWT_SECRET`, `PUBLIC_BASE_URL` and `TRUST_PROXY=true`. Compose is preferred.

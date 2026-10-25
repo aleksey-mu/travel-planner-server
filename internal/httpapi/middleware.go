@@ -92,8 +92,8 @@ func LoggingMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 // (invite tokens, future password-reset tokens).
 func redactSensitivePath(path string) string {
 	for _, prefix := range []string{
-		"/api/v1/invites/",
-		"/api/v1/password-reset/",
+		"/invites/",
+		"/password-reset/",
 	} {
 		if !strings.HasPrefix(path, prefix) {
 			continue
@@ -129,7 +129,7 @@ func CORSMiddleware(origins []string) func(http.Handler) http.Handler {
 					w.Header().Set("Access-Control-Max-Age", "86400")
 				}
 			}
-			if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

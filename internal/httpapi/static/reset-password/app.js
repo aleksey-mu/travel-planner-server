@@ -50,7 +50,7 @@
       return;
     }
     try {
-      const info = await api("/api/v1/password-reset/" + encodeURIComponent(token));
+      const info = await api("/password-reset/" + encodeURIComponent(token));
       const name = info.serverName || location.host;
       const admins = (info.adminDisplayNames || []).join(", ") || "(no admins listed)";
       el("summary").textContent = name + " — admins: " + admins;
@@ -71,7 +71,7 @@
       return;
     }
     try {
-      await api("/api/v1/password-reset/" + encodeURIComponent(el("token").value.trim()), {
+      await api("/password-reset/" + encodeURIComponent(el("token").value.trim()), {
         method: "POST",
         body: JSON.stringify({ password: p1 }),
       });

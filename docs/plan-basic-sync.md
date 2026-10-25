@@ -91,7 +91,7 @@ travel-planner-server/
 
 ### Why stdlib `net/http` (not Gin/Echo/Chi)
 
-Go 1.22+ ServeMux supports method+path patterns and wildcards (`GET /api/v1/sync/files/{fileId...}`, `r.PathValue("fileId")`). For a small REST surface (~15 routes), a router framework adds dependency surface without clear benefit. Introduce Chi/etc. only if middleware composition becomes painful.
+Go 1.22+ ServeMux supports method+path patterns and wildcards (`GET /sync/files/{fileId...}`, `r.PathValue("fileId")`). For a small REST surface (~15 routes), a router framework adds dependency surface without clear benefit. Introduce Chi/etc. only if middleware composition becomes painful.
 
 ### Request flow
 
@@ -152,7 +152,7 @@ Do **not** add ORMs (GORM) for a single `users` table.
 | User-data presets file | `custom-item-presets.json` | **`item-types.json`** | Client constant `USER_DATA_ITEM_TYPES_FILE_NAME` |
 | Allowed user-data names | three names including custom-item-presets | `user-prefs.json`, `item-types.json`, `checklist-templates.json` | Match client |
 | Attachment `fileId` | path under `files/` e.g. `files/{travel}/{item}/{name}` | Same | Client stores Drive-like path ids |
-| `GET/DELETE /sync/files/{fileId}` | `{fileId}` is path under `files/` | Accept **both** `files/...` and bare `{travel}/{item}/{name}` after `/sync/files/` | Client currently calls `/api/v1/sync/files/files/...` (see §4.3) |
+| `GET/DELETE /sync/files/{fileId}` | `{fileId}` is path under `files/` | Accept **both** `files/...` and bare `{travel}/{item}/{name}` after `/sync/files/` | Client currently calls `/sync/files/files/...` (see §4.3) |
 
 Update `self-hosted-server.md` in the Angular repo when implementing (same PR / follow-up) so sketch matches reality.
 
@@ -223,7 +223,7 @@ All JSON unless noted. Protected routes require `Authorization: Bearer <accessTo
 
 ```ts
 // SelfHostedAuthService.signInWithCredentials
-POST {base}/api/v1/auth/login
+POST {base}/auth/login
 body: { email: config.username, password }
 reads: accessToken, expiresIn, user.id, user.email, user.displayName?
 ```
@@ -268,10 +268,10 @@ reads: accessToken, expiresIn, user.id, user.email, user.displayName?
 Register **specific** routes before wildcards:
 
 ```go
-mux.HandleFunc("PUT /api/v1/sync/files/{travelId}/{itemId}/{fileName}", ...)
-mux.HandleFunc("POST /api/v1/sync/files/{travelId}/{itemId}/ensure-folder", ...)
-mux.HandleFunc("GET /api/v1/sync/files/{fileId...}", ...)
-mux.HandleFunc("DELETE /api/v1/sync/files/{fileId...}", ...)
+mux.HandleFunc("PUT /sync/files/{travelId}/{itemId}/{fileName}", ...)
+mux.HandleFunc("POST /sync/files/{travelId}/{itemId}/ensure-folder", ...)
+mux.HandleFunc("GET /sync/files/{fileId...}", ...)
+mux.HandleFunc("DELETE /sync/files/{fileId...}", ...)
 ```
 
 **Normalize `fileId` for GET/DELETE:**
@@ -332,7 +332,7 @@ For matching Origin:
 - `Access-Control-Allow-Headers: Authorization, Content-Type`
 - `Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS`
 - `Access-Control-Max-Age: 86400` (optional)
-- Answer `OPTIONS` for `/api/v1/*` with `204`
+- Answer `OPTIONS` for `/*` with `204`
 
 If `CORS_ORIGINS` empty: no CORS headers (native / same-origin / reverse-proxy CORS OK).
 
@@ -366,10 +366,10 @@ travelplan-server create-user \
 
 ### Login → sync
 
-1. Client `GET /api/v1/health` (no auth).
-2. Client `POST /api/v1/auth/login`.
-3. Client stores JWT; `GET /api/v1/me`.
-4. Client `POST /api/v1/sync/bootstrap` → `rootId` (== userId).
+1. Client `GET /health` (no auth).
+2. Client `POST /auth/login`.
+3. Client stores JWT; `GET /me`.
+4. Client `POST /sync/bootstrap` → `rootId` (== userId).
 5. Subsequent sync via FolderLayoutSyncAdapter → SelfHostedFolderClient.
 
 **No refresh token:** client re-logins with stored password when JWT near expiry (`expiresAt - 60s`). Server only issues short-lived access JWTs.
@@ -418,7 +418,7 @@ CMD ["serve"]
 
 **Locked (Phase 1):** alpine non-root + `healthcheck` subcommand (not distroless). Distroless can be a later hardening pass.
 
-Implement subcommand `healthcheck` that GETs `http://127.0.0.1:$PORT/api/v1/health` or dials the listen addr — keeps HEALTHCHECK self-contained.
+Implement subcommand `healthcheck` that GETs `http://127.0.0.1:$PORT/health` or dials the listen addr — keeps HEALTHCHECK self-contained.
 
 ### `docker-compose.yml` (sketch)
 
@@ -501,13 +501,13 @@ Terminate TLS with Caddy/nginx; proxy to `127.0.0.1:8080`; set `CORS_ORIGINS` to
 - [x] `internal/config` loads env; fails fast if `DATA_DIR` or `JWT_SECRET` missing / weak / placeholder
 - [x] Align `travel-plans/docs/self-hosted-server.md`: `item-types.json`, dual fileId, no manifest DELETE
 - [x] `log/slog` JSON or text via `LOG_FORMAT`
-- [x] `GET /api/v1/health` returns ok
+- [x] `GET /health` returns ok
 - [x] Dockerfile (alpine) + compose + `.env.example` build and listen; healthcheck green
 
 **Accept:**
 
 ```bash
-curl -s http://127.0.0.1:8080/api/v1/health
+curl -s http://127.0.0.1:8080/health
 # {"status":"ok","version":"1.0.0"}
 ```
 
@@ -520,17 +520,17 @@ curl -s http://127.0.0.1:8080/api/v1/health
 **Accept (httptest sketch):**
 
 ```
-POST /api/v1/auth/login  email+password → 200 accessToken
-GET  /api/v1/me          Authorization: Bearer … → 200 id
-GET  /api/v1/me          no header → 401
-POST /api/v1/auth/register when ALLOW_REGISTER=false → 403
+POST /auth/login  email+password → 200 accessToken
+GET  /me          Authorization: Bearer … → 200 id
+GET  /me          no header → 401
+POST /auth/register when ALLOW_REGISTER=false → 403
 ```
 
 ```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
+TOKEN=$(curl -s -X POST http://127.0.0.1:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"secret123"}' | jq -r .accessToken)
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/me
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/me
 ```
 
 ### Phase 2 — Sync JSON (manifest, travels, user-data)
@@ -543,16 +543,16 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/me
 **Accept:**
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/sync/bootstrap
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/sync/manifest
+curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/sync/bootstrap
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/sync/manifest
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"schemaVersion":1,"updatedAt":"2026-07-19T12:00:00Z","travels":[]}' \
-  http://127.0.0.1:8080/api/v1/sync/manifest -w "%{http_code}\n"   # 204
+  http://127.0.0.1:8080/sync/manifest -w "%{http_code}\n"   # 204
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"id":"t1","name":"Trip","items":[]}' \
-  http://127.0.0.1:8080/api/v1/sync/travels/t1
+  http://127.0.0.1:8080/sync/travels/t1
 # {"fileId":"t1"}
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/sync/quota
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/sync/quota
 ```
 
 ### Phase 3 — Attachments + quota enforce
@@ -566,20 +566,20 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/sync/quot
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:8080/api/v1/sync/files/t1/i1/ensure-folder
+  http://127.0.0.1:8080/sync/files/t1/i1/ensure-folder
 # {"folderId":"files/t1/i1"}
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/octet-stream' \
   --data-binary @./photo.jpg \
-  http://127.0.0.1:8080/api/v1/sync/files/t1/i1/photo.jpg
+  http://127.0.0.1:8080/sync/files/t1/i1/photo.jpg
 # {"fileId":"files/t1/i1/photo.jpg"}
 curl -s -H "Authorization: Bearer $TOKEN" \
   -o /tmp/out.jpg \
-  http://127.0.0.1:8080/api/v1/sync/files/files/t1/i1/photo.jpg
+  http://127.0.0.1:8080/sync/files/files/t1/i1/photo.jpg
 # also: .../sync/files/t1/i1/photo.jpg
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:8080/api/v1/sync/files/files/t1/i1/photo.jpg -w "%{http_code}\n"   # 204
+  http://127.0.0.1:8080/sync/files/files/t1/i1/photo.jpg -w "%{http_code}\n"   # 204
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:8080/api/v1/sync/travels/t1 -w "%{http_code}\n"   # 204
+  http://127.0.0.1:8080/sync/travels/t1 -w "%{http_code}\n"   # 204
 # negatives: GET .../files/../etc/passwd or .../files/%2e%2e/... → 400
 # PUT over MAX_UPLOAD_MB or quota → 413; free disk shortfall → 507 DISK_FULL
 # GET /sync/manifest without Authorization → 401
@@ -595,7 +595,7 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
 **CORS accept:**
 
 ```bash
-curl -si -X OPTIONS http://127.0.0.1:8080/api/v1/me \
+curl -si -X OPTIONS http://127.0.0.1:8080/me \
   -H "Origin: http://localhost:4200" \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: Authorization"
@@ -671,22 +671,22 @@ All under `D:\Projects\!0TEST_ANYTHING_HERE\travel-plans\` (Angular TravelPlan r
 ### Client URL cheat-sheet (implement exactly)
 
 ```
-GET  {base}/api/v1/health
-POST {base}/api/v1/auth/login
-GET  {base}/api/v1/me
-POST {base}/api/v1/sync/bootstrap
-GET  {base}/api/v1/sync/quota
-GET  {base}/api/v1/sync/manifest
-PUT  {base}/api/v1/sync/manifest          # also used to “clear” (empty travels); no DELETE
-GET  {base}/api/v1/sync/travels/{travelId}
-PUT  {base}/api/v1/sync/travels/{travelId}
-DELETE {base}/api/v1/sync/travels/{travelId}
-GET  {base}/api/v1/sync/user-data/{fileName}
-PUT  {base}/api/v1/sync/user-data/{fileName}
-PUT  {base}/api/v1/sync/files/{travelId}/{itemId}/{fileName}     # raw body
-GET  {base}/api/v1/sync/files/{fileId...}                        # fileId often "files/..."
-DELETE {base}/api/v1/sync/files/{fileId...}
-POST {base}/api/v1/sync/files/{travelId}/{itemId}/ensure-folder
+GET  {base}/health
+POST {base}/auth/login
+GET  {base}/me
+POST {base}/sync/bootstrap
+GET  {base}/sync/quota
+GET  {base}/sync/manifest
+PUT  {base}/sync/manifest          # also used to “clear” (empty travels); no DELETE
+GET  {base}/sync/travels/{travelId}
+PUT  {base}/sync/travels/{travelId}
+DELETE {base}/sync/travels/{travelId}
+GET  {base}/sync/user-data/{fileName}
+PUT  {base}/sync/user-data/{fileName}
+PUT  {base}/sync/files/{travelId}/{itemId}/{fileName}     # raw body
+GET  {base}/sync/files/{fileId...}                        # fileId often "files/..."
+DELETE {base}/sync/files/{fileId...}
+POST {base}/sync/files/{travelId}/{itemId}/ensure-folder
 ```
 
 ---

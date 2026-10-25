@@ -1,4 +1,4 @@
 package version
 
-// Version is injected at build via -ldflags, or defaults for local runs.
-var Version = "1.0.0"
+// Version is reported by GET /health.
+var Version = "0.1.0"

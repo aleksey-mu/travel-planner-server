@@ -32,7 +32,7 @@ func TestAdminStaticServesWithCSP(t *testing.T) {
 		t.Fatalf("app.js %d", rec.Code)
 	}
 	js := rec.Body.String()
-	if !strings.Contains(js, "/api/v1/admin/invites") || !strings.Contains(js, "quotaMode") {
+	if !strings.Contains(js, "/admin/invites") || !strings.Contains(js, "quotaMode") {
 		t.Fatal("app.js missing invite/quota wiring")
 	}
 	if !strings.Contains(js, "clearPanelSecrets") || !strings.Contains(js, "MiB (personal)") {
@@ -73,7 +73,7 @@ func TestJoinAndResetPasswordStaticPages(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/join/app.js", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/api/v1/invites/") {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/invites/") {
 		t.Fatalf("join app.js %d", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "recovery-codes/ack") {
@@ -95,7 +95,7 @@ func TestJoinAndResetPasswordStaticPages(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/reset-password/app.js", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/api/v1/password-reset/") {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "/password-reset/") {
 		t.Fatalf("reset app.js %d", rec.Code)
 	}
 }
@@ -112,7 +112,7 @@ func TestAdminPanelLoginListCreateInviteAndUnlimitedQuota(t *testing.T) {
 	}
 	tok := loginEmail(t, h, "admin@example.com", "secret123")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -120,7 +120,7 @@ func TestAdminPanelLoginListCreateInviteAndUnlimitedQuota(t *testing.T) {
 		t.Fatalf("list users %d %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/invites", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/invites", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestAdminPanelLoginListCreateInviteAndUnlimitedQuota(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+member.ID,
+	req = httptest.NewRequest(http.MethodPatch, "/admin/users/"+member.ID,
 		strings.NewReader(`{"quotaMode":"unlimited"}`))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
@@ -146,7 +146,7 @@ func TestAdminPanelLoginListCreateInviteAndUnlimitedQuota(t *testing.T) {
 	}
 
 	memberTok := loginEmail(t, h, "member@example.com", "secret123")
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+memberTok)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
