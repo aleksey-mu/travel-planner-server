@@ -1,15 +1,12 @@
-# Coolify: New resource -> Docker Compose. Magic variables (https://coolify.io/docs/knowledge-base/docker/compose):
-#   SERVICE_URL_TRAVELPLAN_8080  -> routes the service's domain to container port 8080 (value = URL path)
-#   SERVICE_PASSWORD_64_JWT      -> generated 64-char secret, stable across redeploys
-# In the Domains UI keep the port in the domain, e.g. https://api.example.com:8080
+# Coolify: New resource -> Docker Compose. Set the domain on the `travelplan` service as
+# https://your.domain:8080 (the :8080 tells the proxy the container port; it is not part of the public URL).
 # Plain VPS: docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
 services:
   travelplan:
     build: .
     environment:
-      SERVICE_URL_TRAVELPLAN_8080: /
-      JWT_SECRET: ${SERVICE_PASSWORD_64_JWT}
-      PUBLIC_BASE_URL: ${SERVICE_URL_TRAVELPLAN_8080}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL (https://your.domain)}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       SERVER_NAME: ${SERVER_NAME:-}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}

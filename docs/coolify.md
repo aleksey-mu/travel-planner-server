@@ -9,16 +9,15 @@ Docker Compose resource built from this repo. `docker-compose.yml` uses Coolify'
 1. Coolify → **New resource** → **Docker Compose** → connect `aleksey-mu/travel-planner-server`, branch `main`.
 2. Compose file: `docker-compose.yml` (default).
 
-## 2. Domain
+## 2. Domain and required variables
 
-Open **Configuration → Services → travelplan** and set the domain (e.g. `https://travelplan.example.com`). The compose file declares `SERVICE_URL_TRAVELPLAN_8080: /`, which tells Coolify the service listens on port **8080**; HTTPS is handled by its proxy. If you type the domain yourself, include the port: `https://travelplan.example.com:8080` (Coolify warns "No internal port" otherwise; the port is not part of the public URL). No `ports:` mapping is used, so there are no host-port conflicts.
+1. Set the domain on the `travelplan` service **with the port**: `https://travelplan.example.com:8080`. The `:8080` is the container port for Coolify's proxy; it is not part of the public URL. HTTPS is handled by the proxy.
+2. In **Environment Variables** set:
 
-From that domain Coolify fills in automatically:
-
-| Variable | Source |
-|----------|--------|
-| `PUBLIC_BASE_URL` | `SERVICE_URL_TRAVELPLAN_8080` (your domain; must be `https://`) |
-| `JWT_SECRET` | `SERVICE_PASSWORD_64_JWT` (generated once) |
+| Variable | Value |
+|----------|-------|
+| `JWT_SECRET` | random string, ≥32 chars. PowerShell: `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))` |
+| `PUBLIC_BASE_URL` | `https://travelplan.example.com` (no port) |
 
 ## 3. Optional environment variables
 
@@ -48,7 +47,7 @@ Create an invite from the admin UI, or in the resource terminal: `/travelplan-se
 
 | Symptom | Fix |
 |---------|-----|
-| Domain field missing / 502 | Set the domain on the `travelplan` service; it must proxy to port 8080 |
+| 502 / "No internal port" | The domain must include the port: `https://travelplan.example.com:8080` |
 | Container exits immediately | Check logs — `PUBLIC_BASE_URL must be https://` means the domain was saved as `http://` |
 | 429 on login from your IP | Coolify must forward `X-Forwarded-For` (compose sets `TRUST_PROXY=true`) |
 | Web app CORS errors | Add the web origin to `CORS_ORIGINS` |
@@ -56,4 +55,4 @@ Create an invite from the admin UI, or in the resource terminal: `/travelplan-se
 
 ## Dockerfile-only (alternative)
 
-New resource → **Dockerfile**, port **8080**, health path `/api/v1/health`, storage at `/data`. Set `JWT_SECRET`, `PUBLIC_BASE_URL` and `TRUST_PROXY=true` yourself. Compose is preferred.
+New resource → **Dockerfile**, port **8080**, health path `/api/v1/health`, storage at `/data`. Set `JWT_SECRET`, `PUBLIC_BASE_URL` and `TRUST_PROXY=true`. Compose is preferred.

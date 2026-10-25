@@ -31,8 +31,8 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 
 | Variable | Purpose |
 |----------|---------|
-| `JWT_SECRET` | Signing key, ≥32 chars. **Coolify generates it for you.** Elsewhere: `openssl rand -base64 48` |
-| `PUBLIC_BASE_URL` | `https://…` origin for invite + reset links. **Coolify fills it from the domain.** Elsewhere: set it |
+| `JWT_SECRET` | Signing key, ≥32 chars. Generate: `openssl rand -base64 48` (PowerShell: `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))`) |
+| `PUBLIC_BASE_URL` | `https://…` origin for invite + reset links. Your public domain, no port |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Creates the **first admin** on an empty DB. Remove the password after first login |
 | `CORS_ORIGINS` | Web app origin(s), comma-separated. Native apps ignore CORS |
 | `SERVER_NAME` | Label shown on join / Settings / admin. Defaults to the `PUBLIC_BASE_URL` hostname |
@@ -66,7 +66,7 @@ docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
 **Full walkthrough:** [docs/coolify.md](docs/coolify.md)
 
 1. New resource → **Docker Compose** → this repo, `docker-compose.yml`.
-2. Coolify detects the service domain slot from the compose file — set your domain on the `travelplan` service (port 8080 is preset), and deploy. `JWT_SECRET` and `PUBLIC_BASE_URL` are filled in automatically.
+2. Set the domain on the `travelplan` service as `https://your.domain:8080` (the port is for the proxy only), and set `JWT_SECRET` and `PUBLIC_BASE_URL`.
 3. Optionally set `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` and `CORS_ORIGINS`.
 4. Volume `travelplan-data` → `/data` is already in compose — do not wipe on redeploy.
 
