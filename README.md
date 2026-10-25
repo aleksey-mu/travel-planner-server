@@ -6,7 +6,7 @@ Instead of linking Google Drive / OneDrive / Dropbox, the app talks to this serv
 
 **Multi-user (friends-scale)**
 
-- **Breaking / unreleased:** wipe `DATA_DIR` when upgrading builds — no DB or API compatibility.
+- **Unreleased:** no DB migrations or API compatibility — wipe `DATA_DIR` when upgrading builds.
 - Auth: email + password → JWT (no OAuth, no SMTP). Open register always **403**; accounts come from CLI/`SEED_ADMIN_*` or **one-time invites**.
 - Default soft cap: **`MAX_USERS=100`** (`0` = unlimited). Invites are **one use**, TTL default **7 days**.
 - Admin UI: `{PUBLIC_BASE_URL}/admin/` (separate browser login; not the TravelPlan app JWT).
@@ -31,24 +31,16 @@ Use the same variables whether you deploy on a VPS or Coolify: copy from `.env.e
 
 | Variable | Purpose |
 |----------|---------|
-| `JWT_SECRET` | Signing key for access tokens. Required, ≥32 chars, not a placeholder. Generate once: `openssl rand -base64 48` |
-| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Creates the **first admin** on empty DB. **Unset the password after first successful login** |
-| `SEED_ADMIN_DISPLAY_NAME` | Display name (default `Admin`) |
-| `SERVER_NAME` | Friendly host label shown on join / Settings / admin header |
-| `PUBLIC_BASE_URL` | `https://…` origin for invite + reset URLs (required for copy-paste links) |
-| `CORS_ORIGINS` | Allowed **web app** origins (comma-separated). Native apps ignore CORS |
-| `MAX_USERS` | Soft account cap (default `100`; `0` = unlimited). Counts **all** rows incl. disabled |
-| `INVITE_TTL_DAYS` | Invite lifetime (default `7`) |
-| `PASSWORD_RESET_TTL_SECONDS` | Admin reset-link TTL (default `3600`) |
-| `AUTH_RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_WINDOW_SECONDS` | Brute-force limits (default `20` / `900`) |
-| `TRUST_PROXY` | `true` only behind a reverse proxy that sets `X-Real-IP` / `X-Forwarded-For` (Coolify etc.) |
-| `VAULT_QUOTA_MB` | Default vault cap in MiB (`10240` ≈ 10 GiB). **`0` = unlimited** (disk still applies) |
-| `MAX_UPLOAD_MB` | Max size of a single attachment, in MiB (default `50`) |
-| `HTTP_PUBLISH_PORT` | Host port for Compose on a VPS (default `8080`). Unused when Coolify’s proxy fronts the container |
-| `ALLOW_REGISTER` | Keep `false` (ignored — register always disabled) |
-| `DATA_DIR` | `/data` when using the provided Compose file |
+| `JWT_SECRET` | Signing key, ≥32 chars. **Coolify generates it for you.** Elsewhere: `openssl rand -base64 48` |
+| `PUBLIC_BASE_URL` | `https://…` origin for invite + reset links. **Coolify fills it from the domain.** Elsewhere: set it |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Creates the **first admin** on an empty DB. Remove the password after first login |
+| `CORS_ORIGINS` | Web app origin(s), comma-separated. Native apps ignore CORS |
+| `SERVER_NAME` | Label shown on join / Settings / admin. Defaults to the `PUBLIC_BASE_URL` hostname |
+| `MAX_USERS` | Account cap (default `100`, `0` = unlimited; disabled users count) |
+| `VAULT_QUOTA_MB` | Default vault cap in MiB (default `10240`, `0` = unlimited; disk still applies) |
+| `MAX_UPLOAD_MB` | Max single attachment in MiB (default `50`) |
 
-Minimum before deploy: `JWT_SECRET`, owner seed **or** later `create-user`, plus `SERVER_NAME` + `PUBLIC_BASE_URL` for friend invites. Set `CORS_ORIGINS` if you use the web app. Behind Coolify/Caddy set `TRUST_PROXY=true`.
+Everything else is fixed: access tokens 1 h, invites 7 days, reset links 1 h, auth rate limit 20 attempts / 15 min, JSON logs. `TRUST_PROXY=true` is set in the compose file; `DATA_DIR` is `/data` in the image (`./data` when running the binary directly).
 
 Health check: `GET /api/v1/health` → `{"status":"ok","version":"…"}`.
 
@@ -58,28 +50,25 @@ Health check: `GET /api/v1/health` → `{"status":"ok","version":"…"}`.
 
 ### Option A — VPS + Docker Compose
 
-1. Clone this repo on the VPS; put the env from step 1 in `.env` next to `docker-compose.yml`.
-2. Start:
+1. Clone this repo; copy `.env.example` to `.env` and set `JWT_SECRET` and `PUBLIC_BASE_URL`.
+2. Start (publishes `HTTP_PUBLISH_PORT`, default `8080`):
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
 ```
 
-3. Put TLS in front (Caddy, nginx, Traefik, or your panel). Proxy the public hostname to container port `8080`.
+3. Put TLS in front (Caddy, nginx, Traefik) and proxy the hostname to port `8080`.
 4. Verify: `curl -s https://YOUR_HOST/api/v1/health`
-5. After first successful owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and run `docker compose up -d` again.
+5. After first owner login, remove `SEED_ADMIN_PASSWORD` from `.env` and re-run the command.
 
 ### Option B — Coolify
 
 **Full walkthrough:** [docs/coolify.md](docs/coolify.md)
 
 1. New resource → **Docker Compose** → this repo, `docker-compose.yml`.
-2. Domain → container port **8080**; enable HTTPS. Health path: `/api/v1/health`.
-3. Set env in Coolify UI (compose interpolates `${VAR}` — no `env_file` needed):
-   - **Required:** `JWT_SECRET`, `TRUST_PROXY=true`
-   - **Recommended:** `PUBLIC_BASE_URL=https://your.host`, `SERVER_NAME`, `SEED_ADMIN_*`, `CORS_ORIGINS`
-4. Persistent volume `travelplan-data` → `/data` is already in compose — do not wipe on redeploy.
-5. After first login, clear `SEED_ADMIN_PASSWORD` and redeploy.
+2. Coolify detects the service domain slot from the compose file — set your domain on the `travelplan` service (port 8080 is preset), and deploy. `JWT_SECRET` and `PUBLIC_BASE_URL` are filled in automatically.
+3. Optionally set `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` and `CORS_ORIGINS`.
+4. Volume `travelplan-data` → `/data` is already in compose — do not wipe on redeploy.
 
 Dockerfile-only is supported; see [docs/coolify.md](docs/coolify.md#dockerfile-only-alternative).
 
@@ -90,15 +79,15 @@ Dockerfile-only is supported; see [docs/coolify.md](docs/coolify.md#dockerfile-o
 1. **First boot** seeds an admin when `SEED_ADMIN_*` is set **and** the users table is empty. Prefer CLI if you skip seed:
 
 ```bash
-docker compose exec travelplan-server /travelplan-server create-user \
+docker compose exec travelplan /travelplan-server create-user \
   --email you@example.com --password '…' --display-name You --admin
 ```
 
-2. Set **`SERVER_NAME`** (e.g. `Alex’s NAS`) and **`PUBLIC_BASE_URL=https://your.host`**.
+2. Optionally set **`SERVER_NAME`** (e.g. `Alex’s NAS`); `PUBLIC_BASE_URL` must be your `https://` host.
 3. **Invite friends** (one-time link, TTL shown):
 
 ```bash
-docker compose exec travelplan-server /travelplan-server create-invite \
+docker compose exec travelplan /travelplan-server create-invite \
   [--expires-days 7] [--label friend]
 ```
 
@@ -153,13 +142,13 @@ Or open **`https://YOUR_HOST/admin/`**, sign in as admin → **Create invite**. 
 
 ```bash
 docker compose ps
-docker compose logs -f travelplan-server
-docker compose up -d --build
-docker compose exec travelplan-server /travelplan-server healthcheck
-docker compose exec travelplan-server /travelplan-server set-password --email … --password …
-docker compose exec travelplan-server /travelplan-server create-reset-link --email …
-docker compose exec travelplan-server /travelplan-server list-users
-docker compose exec travelplan-server /travelplan-server set-quota --email … --mb unlimited
+docker compose logs -f travelplan
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+docker compose exec travelplan /travelplan-server healthcheck
+docker compose exec travelplan /travelplan-server set-password --email … --password …
+docker compose exec travelplan /travelplan-server create-reset-link --email …
+docker compose exec travelplan /travelplan-server list-users
+docker compose exec travelplan /travelplan-server set-quota --email … --mb unlimited
 ```
 
 CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `revoke-invite` | `create-reset-link` | `list-users` | `set-quota` | `disable-user` | `enable-user` | `delete-user` | `promote-admin` | `demote-admin` | `healthcheck`
@@ -172,27 +161,7 @@ CLI in the image: `serve` | `create-user` | `set-password` | `create-invite` | `
 
 ## Environment reference
 
-| Env | Required | Default | Notes |
-|-----|----------|---------|-------|
-| `DATA_DIR` | yes | — | Compose sets `/data` |
-| `JWT_SECRET` | yes | — | ≥32 chars |
-| `HTTP_ADDR` | no | `:8080` | Listen address in-container |
-| `HTTP_PUBLISH_PORT` | no | `8080` | VPS Compose host mapping |
-| `CORS_ORIGINS` | no | empty | Web origins only |
-| `ALLOW_REGISTER` | no | `false` | Keep false |
-| `JWT_TTL_SECONDS` | no | `3600` | |
-| `VAULT_QUOTA_MB` | no | `10240` | Vault cap MiB; **`0` = unlimited** |
-| `MAX_UPLOAD_MB` | no | `50` | Per-file cap (MiB) |
-| `SERVER_NAME` | no | empty | Friendly host label |
-| `PUBLIC_BASE_URL` | no | empty | `https://…` for invite/reset URLs |
-| `MAX_USERS` | no | `100` | Account soft cap (`0` = unlimited) |
-| `INVITE_TTL_DAYS` | no | `7` | Invite lifetime |
-| `PASSWORD_RESET_TTL_SECONDS` | no | `3600` | Admin reset-link TTL |
-| `AUTH_RATE_LIMIT_MAX` | no | `20` | `0` disables |
-| `AUTH_RATE_LIMIT_WINDOW_SECONDS` | no | `900` | |
-| `TRUST_PROXY` | no | `false` | Coolify / reverse proxy |
-| `LOG_FORMAT` / `LOG_LEVEL` | no | `json` / `info` | |
-| `SEED_ADMIN_*` | no | — | First-boot admin on **empty** DB; remove password after |
+See the table in [step 1](#1-configure-environment). Optional extras honored by the binary: `DATA_DIR` (default `./data`), `HTTP_ADDR` (default `:8080`), `TRUST_PROXY` (default `false`), `HTTP_PUBLISH_PORT` (VPS compose host port).
 
 **Current product plan:** [docs/plan-multi-user.md](docs/plan-multi-user.md) · step build: [docs/plan-multi-user-impl.md](docs/plan-multi-user-impl.md).  
 Historical Phase 1 notes (superseded for quota/tenancy): [docs/plan-basic-sync.md](docs/plan-basic-sync.md).

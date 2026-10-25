@@ -35,7 +35,7 @@ func decodeAuthJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 }
 
 func (a *API) handleRegister(w http.ResponseWriter, _ *http.Request) {
-	// Closed registration — invites / CLI only (hard-cut; ALLOW_REGISTER ignored).
+	// Closed registration — invites / CLI only.
 	writeError(w, http.StatusForbidden, "REGISTER_DISABLED", "registration is disabled")
 }
 

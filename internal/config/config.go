@@ -12,13 +12,12 @@ import (
 )
 
 const (
+	DefaultDataDir                 = "data"
 	DefaultHTTPAddr                = ":8080"
 	DefaultJWTTTLSeconds           = 3600
 	VaultQuotaMB                   = int64(10240) // 10 GiB
 	DefaultMaxUploadMB             = int64(50)
 	BytesPerMB                     = int64(1024 * 1024)
-	DefaultLogFormat               = "json"
-	DefaultLogLevel                = "info"
 	DefaultSeedDisplayName         = "Admin"
 	MinJWTSecretLen                = 32
 	DefaultMaxUsers                = 100
@@ -45,12 +44,9 @@ type Config struct {
 	JWTSecret               string
 	HTTPAddr                string
 	CORSOrigins             []string
-	AllowRegister           bool
 	JWTTTLSeconds           int
 	DefaultQuotaBytes       int64
 	MaxUploadBytes          int64
-	LogFormat               string
-	LogLevel                string
 	SeedAdminEmail          string
 	SeedAdminPassword       string
 	SeedAdminDisplayName    string
@@ -70,7 +66,7 @@ func Load() (*Config, error) {
 
 	dataDir := strings.TrimSpace(os.Getenv("DATA_DIR"))
 	if dataDir == "" {
-		return nil, fmt.Errorf("DATA_DIR is required")
+		dataDir = DefaultDataDir
 	}
 
 	secret := os.Getenv("JWT_SECRET")
@@ -84,19 +80,6 @@ func Load() (*Config, error) {
 	}
 
 	corsOrigins := parseCSV(os.Getenv("CORS_ORIGINS"))
-
-	allowRegister, err := parseBool(os.Getenv("ALLOW_REGISTER"), false)
-	if err != nil {
-		return nil, fmt.Errorf("ALLOW_REGISTER: %w", err)
-	}
-
-	ttl, err := parseInt(os.Getenv("JWT_TTL_SECONDS"), DefaultJWTTTLSeconds)
-	if err != nil {
-		return nil, fmt.Errorf("JWT_TTL_SECONDS: %w", err)
-	}
-	if ttl <= 0 {
-		return nil, fmt.Errorf("JWT_TTL_SECONDS must be positive")
-	}
 
 	quotaMB, err := parseInt64(os.Getenv("VAULT_QUOTA_MB"), VaultQuotaMB)
 	if err != nil {
@@ -114,61 +97,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MAX_UPLOAD_MB must be positive")
 	}
 
-	logFormat := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_FORMAT")))
-	if logFormat == "" {
-		logFormat = DefaultLogFormat
-	}
-	if logFormat != "json" && logFormat != "text" {
-		return nil, fmt.Errorf("LOG_FORMAT must be json or text")
-	}
-
-	logLevel := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL")))
-	if logLevel == "" {
-		logLevel = DefaultLogLevel
-	}
-
-	seedDisplay := strings.TrimSpace(os.Getenv("SEED_ADMIN_DISPLAY_NAME"))
-	if seedDisplay == "" {
-		seedDisplay = DefaultSeedDisplayName
-	}
-
 	maxUsers, err := parseInt(os.Getenv("MAX_USERS"), DefaultMaxUsers)
 	if err != nil {
 		return nil, fmt.Errorf("MAX_USERS: %w", err)
 	}
 	if maxUsers < 0 {
 		return nil, fmt.Errorf("MAX_USERS must be >= 0 (0 = unlimited)")
-	}
-
-	inviteTTL, err := parseInt(os.Getenv("INVITE_TTL_DAYS"), DefaultInviteTTLDays)
-	if err != nil {
-		return nil, fmt.Errorf("INVITE_TTL_DAYS: %w", err)
-	}
-	if inviteTTL <= 0 {
-		return nil, fmt.Errorf("INVITE_TTL_DAYS must be positive")
-	}
-
-	resetTTL, err := parseInt(os.Getenv("PASSWORD_RESET_TTL_SECONDS"), DefaultPasswordResetTTLSeconds)
-	if err != nil {
-		return nil, fmt.Errorf("PASSWORD_RESET_TTL_SECONDS: %w", err)
-	}
-	if resetTTL <= 0 {
-		return nil, fmt.Errorf("PASSWORD_RESET_TTL_SECONDS must be positive")
-	}
-
-	rateMax, err := parseInt(os.Getenv("AUTH_RATE_LIMIT_MAX"), DefaultAuthRateLimitMax)
-	if err != nil {
-		return nil, fmt.Errorf("AUTH_RATE_LIMIT_MAX: %w", err)
-	}
-	if rateMax < 0 {
-		return nil, fmt.Errorf("AUTH_RATE_LIMIT_MAX must be >= 0 (0 = disabled)")
-	}
-	rateWindowSec, err := parseInt(os.Getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS"), DefaultAuthRateLimitWindowSec)
-	if err != nil {
-		return nil, fmt.Errorf("AUTH_RATE_LIMIT_WINDOW_SECONDS: %w", err)
-	}
-	if rateWindowSec <= 0 {
-		return nil, fmt.Errorf("AUTH_RATE_LIMIT_WINDOW_SECONDS must be positive")
 	}
 
 	trustProxy, err := parseBool(os.Getenv("TRUST_PROXY"), false)
@@ -186,22 +120,19 @@ func Load() (*Config, error) {
 		JWTSecret:               secret,
 		HTTPAddr:                httpAddr,
 		CORSOrigins:             corsOrigins,
-		AllowRegister:           allowRegister,
-		JWTTTLSeconds:           ttl,
+		JWTTTLSeconds:           DefaultJWTTTLSeconds,
 		DefaultQuotaBytes:       quotaMB * BytesPerMB,
 		MaxUploadBytes:          maxUploadMB * BytesPerMB,
-		LogFormat:               logFormat,
-		LogLevel:                logLevel,
 		SeedAdminEmail:          strings.TrimSpace(os.Getenv("SEED_ADMIN_EMAIL")),
 		SeedAdminPassword:       os.Getenv("SEED_ADMIN_PASSWORD"),
-		SeedAdminDisplayName:    seedDisplay,
+		SeedAdminDisplayName:    DefaultSeedDisplayName,
 		ServerName:              strings.TrimSpace(os.Getenv("SERVER_NAME")),
 		PublicBaseURL:           publicBase,
 		MaxUsers:                maxUsers,
-		InviteTTLDays:           inviteTTL,
-		PasswordResetTTLSeconds: resetTTL,
-		AuthRateLimitMax:        rateMax,
-		AuthRateLimitWindow:     time.Duration(rateWindowSec) * time.Second,
+		InviteTTLDays:           DefaultInviteTTLDays,
+		PasswordResetTTLSeconds: DefaultPasswordResetTTLSeconds,
+		AuthRateLimitMax:        DefaultAuthRateLimitMax,
+		AuthRateLimitWindow:     DefaultAuthRateLimitWindowSec * time.Second,
 		TrustProxy:              trustProxy,
 	}, nil
 }

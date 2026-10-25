@@ -1,41 +1,25 @@
+# Coolify: New resource -> Docker Compose. Coolify reads the SERVICE_* magic variables below:
+#   SERVICE_URL_TRAVELPLAN_8080  -> assigns a domain to this service, proxied to container port 8080
+#   SERVICE_PASSWORD_64_JWT      -> generates a random JWT secret on first deploy
+# Plain VPS: use `docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build`.
 services:
-  travelplan-server:
+  travelplan:
     build: .
-    image: travelplan-server:local
-    ports:
-      - "${HTTP_PUBLISH_PORT:-8080}:8080"
     environment:
-      DATA_DIR: /data
-      HTTP_ADDR: ":8080"
-      HTTP_PUBLISH_PORT: ${HTTP_PUBLISH_PORT:-8080}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in Coolify or .env}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      ALLOW_REGISTER: ${ALLOW_REGISTER:-false}
-      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-3600}
-      SERVER_NAME: ${SERVER_NAME:-}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
-      MAX_USERS: ${MAX_USERS:-100}
-      INVITE_TTL_DAYS: ${INVITE_TTL_DAYS:-7}
-      PASSWORD_RESET_TTL_SECONDS: ${PASSWORD_RESET_TTL_SECONDS:-3600}
-      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
-      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-900}
-      TRUST_PROXY: ${TRUST_PROXY:-true}
-      VAULT_QUOTA_MB: ${VAULT_QUOTA_MB:-10240}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
-      LOG_FORMAT: ${LOG_FORMAT:-json}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
-      SEED_ADMIN_DISPLAY_NAME: ${SEED_ADMIN_DISPLAY_NAME:-Admin}
+      - SERVICE_URL_TRAVELPLAN_8080
+      - JWT_SECRET=${SERVICE_PASSWORD_64_JWT}
+      - PUBLIC_BASE_URL=${SERVICE_URL_TRAVELPLAN}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - SERVER_NAME=${SERVER_NAME:-}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-}
+      - MAX_USERS=${MAX_USERS:-100}
+      - VAULT_QUOTA_MB=${VAULT_QUOTA_MB:-10240}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-50}
+      - TRUST_PROXY=true
     volumes:
       - travelplan-data:/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/travelplan-server", "healthcheck"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
 
 volumes:
   travelplan-data:
