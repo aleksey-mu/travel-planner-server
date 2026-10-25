@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_version         INTEGER NOT NULL DEFAULT 0,
   quota_bytes              INTEGER,
   recovery_codes_acked_at  TEXT,
+  recovery_codes_generation INTEGER NOT NULL DEFAULT 0,
   created_at               TEXT NOT NULL,
   updated_at               TEXT NOT NULL
 );
@@ -92,9 +93,6 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("ensure schema: %w", err)
-	}
-	if err := ensureRecoveryGenerationColumn(s.db); err != nil {
-		return err
 	}
 	if err := ensureInvitesSchema(s.db); err != nil {
 		return err

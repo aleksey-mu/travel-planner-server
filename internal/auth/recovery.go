@@ -44,17 +44,6 @@ CREATE INDEX IF NOT EXISTS idx_recovery_codes_user ON recovery_codes(user_id);
 	return nil
 }
 
-func ensureRecoveryGenerationColumn(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE users ADD COLUMN recovery_codes_generation INTEGER NOT NULL DEFAULT 0`)
-	if err == nil {
-		return nil
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-		return nil
-	}
-	return fmt.Errorf("ensure recovery_codes_generation: %w", err)
-}
-
 // NeedsRecoveryCodesAck reports whether the user must complete codes onboarding.
 func (u *User) NeedsRecoveryCodesAck() bool {
 	return !u.RecoveryCodesAckedAt.Valid || strings.TrimSpace(u.RecoveryCodesAckedAt.String) == ""
